@@ -4,7 +4,7 @@
 ***
 
 <p align="center">
-  <strong>BILINGUAL GITHUB WIKIS AUTO-GENERATED FROM YOUR SOURCE!</strong>
+  <strong>BILINGUAL DOCS SITES AUTO-GENERATED FROM YOUR SOURCE!</strong>
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 
 ***
 
-> A Claude Code skill that derives multi-page bilingual GitHub wikis from CLAUDE.md, with full-file reads, selective page regeneration, and shared author config
+> A Claude Code skill that derives a multi-page bilingual docs site (`wiki-worker/public/docs`) from CLAUDE.md, with full-file reads, a bundled `build.js` template, selective page regeneration, and shared author config
 
 ## Table of Contents
 
@@ -27,9 +27,12 @@
 
 > Install to `~/.claude/skills/wiki-generate/` · [SKILL.md](./SKILL.md)
 
-- **Bilingual Paired Pages** — Every topic outputs `Page.md` + `Page.zh.md` with aligned section structure, identical tables, and untranslated identifiers so function and env-var names stay grep-friendly across languages.
+- **Bilingual Paired Pages** — Every topic outputs `pages/slug.md` + `pages/slug.zh.md` with aligned section structure, identical tables, and untranslated identifiers so function and env-var names stay grep-friendly across languages.
+- **Compiled Static Docs Site** — Bundled `build.js` template (Markdown → HTML via `marked`) compiles `wiki-worker/public/docs/pages/*.md` into `wiki-worker/public/*.html` (EN, `home.md` → `index.html`) and `wiki-worker/public/zh/*.html` (ZH), with sidebar nav, TOC, sitemap.xml, and robots.txt generated automatically.
+- **Cloudflare-Ready Scaffold** — First-run generation also copies `wiki-worker/package.json` and `wiki-worker/wrangler.toml` templates, named `{repo}-wiki`, so `npm run deploy` ships straight to Cloudflare Workers.
+- **README-Mirrored Home** — `pages/home.md` mirrors the project's `README.md` verbatim (minus GitHub-only badges/star-history); `pages/home.zh.md` mirrors `README.zh.md` or `doc/README.zh.md`, falling back to a full translation when neither exists.
 - **Page Set Derived from CLAUDE.md** — 6–12 pages auto-derived from CLAUDE.md headings and project signals; covers Home, Getting-Started, Core-Concepts, Architecture, Configuration, CLI/API Reference, plus subsystem pages such as MCP-Integration or Skill-System.
-- **Full-File Read Contract** — `analyze_project.py` JSON is treated as a symbol index only; each page enforces complete reads of entry points, dispatch loops, env handlers and CLAUDE.md so wikis capture branches and edge cases instead of just signatures.
+- **Full-File Read Contract** — `analyze_project.py` JSON is treated as a symbol index only; each page enforces complete reads of entry points, dispatch loops, env handlers and CLAUDE.md so docs capture branches and edge cases instead of just signatures.
 - **Selective Regeneration** — `--only home,configuration` refreshes specific pages without reading or overwriting others; `--pages` overrides the auto-derived set for first-run customization.
 - **Shared Author Config** — Reuses `~/.skill-readme-generate.json` from readme-generate so author name, email, URL, and GitHub owner are configured once across both skills.
 
@@ -50,7 +53,9 @@ graph TB
     Config --> JSON[~/.skill-readme-generate.json]
     Analyze --> Derive[Page Set Derivation]
     ReadSrc --> Derive
-    Derive --> Wiki[.wiki/Page.md<br/>+ Page.zh.md]
+    Derive --> MD[wiki-worker/public/docs/pages/slug.md<br/>+ slug.zh.md]
+    MD --> Build[node wiki-worker/build.js]
+    Build --> HTML[wiki-worker/public/*.html<br/>+ wiki-worker/public/zh/*.html]
 ```
 
 ## License

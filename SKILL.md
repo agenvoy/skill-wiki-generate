@@ -1,47 +1,49 @@
 ---
 name: wiki-generate
-description: 從原始碼分析自動生成雙語 GitHub Wiki。當使用者請求為專案建立 Wiki（多頁文件）、需要在 .wiki/ 目錄下生成英文（Page.md）與繁體中文（Page.zh.md）成對檔、或希望為函式庫／CLI 工具建立可掛入 GitHub Wiki 的多頁知識庫時使用。
+description: 從原始碼分析自動生成雙語文件站台（wiki-worker/public/docs），並預設內建完整 SEO / AEO 優化（研究、title/description、JSON-LD 實體圖、OG/Twitter、h1、hreflang、sitemap、llms.txt、作者署名）。當使用者請求為專案建立多頁文件、需要在 wiki-worker/public/docs/pages/ 下生成英文（slug.md）與繁體中文（slug.zh.md）成對檔並編譯成靜態 HTML 文件站、或希望為函式庫／CLI 工具建立可部署的雙語文件網站時使用。
 ---
 
-# Wiki 產生器
+# 文件站產生器
 
-從原始碼、CLAUDE.md、`doc/` 既有文件與專案結構分析，產生雙語 GitHub Wiki（成對的 `.md` 與 `.zh.md`）。
+從原始碼、CLAUDE.md、`doc/` 既有文件與專案結構分析，產生雙語靜態文件站（`wiki-worker/public/docs/`），並提供 `wiki-worker/build.js` 將 markdown 編譯為可直接部署的 HTML。
+
+**SEO / AEO 是生成的一部分，不是事後步驟。** 每次生成都依 Step 8 的研究協定與規則產出 title、description、JSON-LD、OG/Twitter、h1、hreflang、sitemap、robots、llms.txt 與可見作者署名；`build.js` 範本已內建對應實作，生成時只需填入專案值。
 
 ## 指令語法
 
 ```
-/wiki-generate [private] [REPO_PATH] [--only <pages>] [--pages <list>]
+/wiki-generate [REPO_PATH] [--only <pages>] [--pages <list>]
 ```
 
 ### 參數（全部選填）
 
 | 參數 | 格式 | 範例 | 行為 |
 |---|---|---|---|
-| `private` | 關鍵字 | `private` | Home 跳過 Stars / contributor wall block |
 | `REPO_PATH` | `github.com/{owner}/{repo}` | `github.com/foo/bar` | 覆蓋預設 owner / repo |
 | `--only <pages>` | 逗號分隔 | `--only home,configuration` | 僅重生指定頁；其他頁不讀不寫 |
 | `--pages <list>` | 逗號分隔 | `--pages getting-started,api-reference,faq` | 覆蓋自動推導的頁面清單 |
 
-**參數識別規則：** 順序獨立，依關鍵字 / 路徑模式 / `--flag` 解析。
+**參數識別規則：** 順序獨立，依路徑模式 / `--flag` 解析。
 
 ### `--only` vs `--pages`
 
 | 場景 | 使用 |
 |---|---|
-| 已生成 wiki，只想刷新 1–2 頁 | `--only` |
+| 已生成文件站，只想刷新 1–2 頁 | `--only` |
 | 第一次生成、想自定頁面集合 | `--pages` |
 | 預設 | 不傳；分析專案後自動推導頁面集 |
 
 `--only` 模式下：
-- 未指定的頁面**不得讀取、不得覆寫**
-- Home 若不在 `--only` 內也不動（即使有新頁面被加入也不更新 Home table）
-- `private`／`REPO_PATH` 仍套用至重生的頁面
+- 未指定的頁面 **不得讀取、不得覆寫**
+- Home 若不在 `--only` 內也不動（即使有新頁面被加入也不更新 Home 導覽）
+- `REPO_PATH` 仍套用至重生的頁面
+- `--only` 後仍須重跑 `node wiki-worker/build.js`（NAV 未變動時新頁 HTML 不受影響，但確保輸出一致）
 
 ---
 
 ## Step 0：作者設定（共用 readme-generate config）
 
-**Wiki 生成需要的作者資訊（name / email / url / github_owner）與 readme-generate 相同，刻意共用一份 config 避免重複設定。腳本本身已隨 skill 複製一份至本地，不依賴 readme-generate 是否安裝。**
+**文件站生成需要的作者資訊（name / email / url / github_owner）與 readme-generate 相同，刻意共用一份 config 避免重複設定。腳本本身已隨 skill 複製一份至本地，不依賴 readme-generate 是否安裝。**
 
 ### 設定檔
 
@@ -53,10 +55,12 @@ description: 從原始碼分析自動生成雙語 GitHub Wiki。當使用者請�
 
 ### 執行協議
 
+下文指令中的 `{skill_dir}` 為本 `SKILL.md` 所在目錄的絕對路徑，依當前執行環境實際載入位置代入。
+
 **Step 0.1：檢查設定**
 
 ```bash
-python3 ~/.claude/skills/wiki-generate/scripts/setup_config.py check
+python3 {skill_dir}/scripts/setup_config.py check
 ```
 
 | Exit Code | stdout | 動作 |
@@ -66,14 +70,33 @@ python3 ~/.claude/skills/wiki-generate/scripts/setup_config.py check
 
 **Step 0.2：收集輸入（缺檔時）**
 
-用 `AskUserQuestion` 工具依序詢問四欄位：`author_name` / `author_email` / `author_url` / `github_owner`，再呼叫：
+向使用者依序詢問四欄位：`author_name` / `author_email` / `author_url` / `github_owner`，再呼叫：
 
 ```bash
-python3 ~/.claude/skills/wiki-generate/scripts/setup_config.py write \
+python3 {skill_dir}/scripts/setup_config.py write \
     "{author_name}" "{author_email}" "{author_url}" "{github_owner}"
 ```
 
-**Step 0.3：覆蓋優先序**
+**Step 0.3：站台元資料與 SEO 設定（新專案第一次生成時額外詢問）**
+
+先檢查 `<project_root>/wiki-worker/.doc/seo/config.json`：存在且欄位完整 → 載入並向使用者複述一行；缺失 → 向使用者詢問下表缺少的欄位後寫入該檔。
+
+| 欄位 | 用途 | 預設 fallback |
+|---|---|---|
+| `site_name` | 文件站顯示名稱（`<title>` 品牌段、JSON-LD `name`、署名列、llms.txt 標題）。**套件／函式庫／CLI 一律用 `{owner}/{repo}`**（如 `pardnchiu/go-bot`）；只有具獨立品牌名的產品（Agenvoy、ToriiDB、KuraDB）才用品牌名本身 | `{owner}/{repo}` |
+| `domain` | 正式部署網域（`https://example.com`，用於 canonical / sitemap / llms.txt，不含結尾斜線） | 從 `wrangler.toml` routes、GitHub repo homepage 推得；推不出就問，**不得填佔位網域** |
+| `gtag_id` | Google Analytics 量測 ID，留空則不注入 | 空字串 |
+| `primary_keywords` / `secondary_keywords` | title／description 的關鍵字來源 | 由 Step 1 實讀原始碼產出 3–4 個產品關鍵字候選供選擇；使用者可另加品牌詞（人名、帳號、組織名） |
+| `author_name_zh` | ZH 頁 title 尾端的作者名 | `author_name` 中的中文部分；無中文則同 `author_name` |
+| `person_id` / `person_name` / `person_alt_names` | JSON-LD Person 節點 | 先抓 `author_url` 頁面的 JSON-LD：已宣告 Person 就**沿用其 `@id` 與 `name`**（跨站實體歸戶）；沒有則 `@id = {author_url}#person`、`name = author_name` |
+| `same_as` | Person `sameAs` 與署名列外部連結 | `https://github.com/{github_owner}`、`author_url`；只列使用者確認實際存在的個人檔案 |
+| `org_name` | Organization 節點與署名列組織段；**逐字採用使用者寫法**（含標點） | 空字串＝無組織，不產生 Organization |
+| `og_image` | 全站 `og:image`／`twitter:image` | 候選：`author_url` 網站的 logo、`https://github.com/{github_owner}.png`；**必須 `curl -sIL` 驗證 200 且為 image/***，否則留空 |
+| `has_physical_location` | 是否需 LocalBusiness | 文件站固定 `false`，不詢問 |
+
+`locales`（依實際語言版本）、`locale_policy: per-language-full`、`engines: [google, google-ai, chatgpt, perplexity, claude]` 為固定值，直接寫入，不詢問。
+
+**Step 0.4：覆蓋優先序**
 
 | 來源 | 優先 |
 |---|---|
@@ -89,12 +112,12 @@ python3 ~/.claude/skills/wiki-generate/scripts/setup_config.py write \
 ### Step 1.1：執行 analyzer 取得符號清單（粗掃）
 
 ```bash
-python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/project
+python3 {skill_dir}/scripts/analyze_project.py /path/to/project
 ```
 
 **輸出**：language / files / functions / types / dependencies 的 JSON 摘要。
 
-**用途**：作為「該讀哪些檔」的索引，**不**作為 wiki 內容生成的依據。analyzer 用 regex 抽符號，會遺漏：
+**用途**：作為「該讀哪些檔」的索引，**不**作為文件內容生成的依據。analyzer 用 regex 抽符號，會遺漏：
 
 - 函式 body 內的實際邏輯／流程／錯誤分支
 - 巢狀 type 與 closure 中的隱含介面
@@ -104,7 +127,7 @@ python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/proje
 
 ### Step 1.2：讀取完整檔案（強制）
 
-**Wiki 生成不可只靠 analyzer 摘要**。針對每個將生成的 wiki 頁，**必須用 `Read` 工具完整讀取**對應的原始碼檔案與既有文件。
+**文件生成不可只靠 analyzer 摘要**。針對每個將生成的頁面，**必須完整讀取**對應的原始碼檔案與既有文件。
 
 | 頁面類型 | 必讀檔案 |
 |---|---|
@@ -119,21 +142,24 @@ python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/proje
 
 **為何：**
 
-1. **Wiki 是 source of truth 文件**：讀者打開 wiki 是要學整個系統運作，分支邏輯／邊界條件不能漏。analyzer 只看符號名，講不清楚「這個函式的 retry 策略是什麼」、「這個 dispatch 有幾種 path」
-2. **避免幻覺**：未讀的檔案不能寫進 wiki。寫入前 grep 一次確認 symbol 存在、簽名正確
+1. **文件是 source of truth**：讀者打開文件是要學整個系統運作，分支邏輯／邊界條件不能漏。analyzer 只看符號名，講不清楚「這個函式的 retry 策略是什麼」、「這個 dispatch 有幾種 path」
+2. **避免幻覺**：未讀的檔案不能寫進文件。寫入前 grep 一次確認 symbol 存在、簽名正確
 3. **Mermaid 結構真實性**：架構圖的 box / arrow 必須對應實際 import / call graph，僅靠 type 名稱會編造關係
 
 **操作建議：**
 
-- 用 `Read` 工具，**不傳 `offset` / `limit`**（除非檔案 > 2000 行才分段讀）
+- 讀取檔案時不截斷範圍；單次讀取有行數上限時才分段讀取至完整檔案
 - 多檔讀取**並行呼叫**，不要序列化
 - 讀過的檔案在生成時可引用 `path:line` 讓讀者跳轉
-- 若檔案過大（> 2000 行）→ 拆段讀完整段，禁止只讀前 N 行就下結論
+- 若檔案過大（> 2000 行）→ 拆段讀完整檔，禁止只讀前 N 行就下結論
+- 寫入或修改前，先讀取目標內容比對；內容已相同時跳過寫入
 
 ### Step 1.3：頁面結構額外來源
 
 | 路徑 | 用途 |
 |---|---|
+| `README.md`（根） | **Home 頁（`pages/home.md`）內容來源，逐字鏡像** |
+| `README.zh.md`（根）／`doc/README.zh.md` | Home 頁 ZH 版（`pages/home.zh.md`）內容來源 |
 | `CLAUDE.md`（根） | 真理來源；架構 / 規範 / 禁止事項 |
 | `doc/architecture.md` | 模組關係；可拆成多頁 |
 | `doc/doc.md` | 既有技術文件；對應 Configuration / CLI Reference 頁 |
@@ -147,176 +173,236 @@ python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/proje
 
 ### 預設頁面集（自動推導）
 
-| 頁 | 觸發條件 | 內容 |
-|---|---|---|
-| **Home** | 永遠 | 概覽、雙語樹狀目錄、生成標注 |
-| **Getting-Started** | 永遠 | 前置需求、安裝、第一次執行 |
-| **Architecture** | 專案有 `doc/architecture.md` 或 CLAUDE.md 含模組關係描述 | 概覽 Mermaid + 分層表 + 跨切原則；連結至 `doc/architecture.md` 完整版 |
-| **Core-Concepts** | 任何非 trivial 專案 | 核心抽象、執行模型、邊界 |
-| **Configuration** | `.env.example` 存在或 `os.Getenv` 多處 | 設定檔結構、env 變數 |
-| **CLI-Reference** | `main.go` + flag 派發、`makefile` 含可執行 target | 主指令、子指令 |
-| **API-Reference** | 函式庫專案（無 main、有 exported types） | exported API |
+| 頁 | slug | 觸發條件 | 內容 |
+|---|---|---|---|
+| **Home** | `home` | 永遠 | 概覽、Highlights、快速連結 |
+| **Getting Started** | `getting-started` | 永遠 | 前置需求、安裝、第一次執行 |
+| **Architecture** | `architecture` | 專案有 `doc/architecture.md` 或 CLAUDE.md 含模組關係描述 | 概覽 Mermaid + 分層表 + 跨切原則；連結至 `doc/architecture.md` 完整版 |
+| **Core Concepts** | `core-concepts` | 任何非 trivial 專案 | 核心抽象、執行模型、邊界 |
+| **Configuration** | `configuration` | `.env.example` 存在或 `os.Getenv` 多處 | 設定檔結構、env 變數 |
+| **CLI Reference** | `cli-reference` | `main.go` + flag 派發、`makefile` 含可執行 target | 主指令、子指令 |
+| **API Reference** | `api-reference` | 函式庫專案（無 main、有 exported types） | exported API |
 
 **Architecture 與 doc/architecture.md 的分工：**
 
 | 文件 | 範圍 | 圖數 |
 |---|---|---|
-| Wiki Architecture 頁 | **單張**系統概覽 + 分層表 + 跨切原則 + 延伸閱讀連結 | **1** |
+| Architecture 頁 | **單張**系統概覽 + 分層表 + 跨切原則 + 延伸閱讀連結 | **1** |
 | `doc/architecture.md` | 模組級全展開（per-module 圖、sequence、狀態機） | 8–10+ |
 
-**Wiki Architecture 嚴格只放一張概覽 Mermaid。** 流程細節（dispatch、sequence、狀態機）一律不重複，原因：
+**Architecture 頁嚴格只放一張概覽 Mermaid。** 流程細節（dispatch、sequence、狀態機）一律不重複，原因：
 
-1. **流程圖該分開放** —— dispatch 屬 Core-Concepts、sequence／state machine 屬 doc/architecture.md，wiki Architecture 頁只負責「整體層級關係」
+1. **流程圖該分開放** —— dispatch 屬 Core Concepts、sequence／state machine 屬 doc/architecture.md，Architecture 頁只負責「整體層級關係」
 2. **避免讀者重複看同樣的圖** —— 同一張 sequence 圖出現在 Architecture 與 doc/architecture.md 是 noise，不是 redundancy
-3. **Wiki 不是 doc 的 mirror** —— wiki 是入口、各頁應 self-contained 但聚焦單一觀察角度
+3. **文件站不是 doc 的 mirror** —— 每頁應 self-contained 但聚焦單一觀察角度
 
-**禁止**整段搬 `doc/architecture.md`，也**禁止**在 Wiki Architecture 頁塞超過一張 Mermaid。要再加圖→放對應 topic 頁（dispatch → Core-Concepts、sequence → doc/architecture.md）。
+**禁止**整段搬 `doc/architecture.md`，也**禁止**在 Architecture 頁塞超過一張 Mermaid。要再加圖→放對應 topic 頁（dispatch → Core Concepts、sequence → doc/architecture.md）。
 
 ### 專案特定頁面（從 CLAUDE.md 一級標題推導）
 
-掃描 CLAUDE.md 的 `##` 一級標題；任何顯著的「子系統」或「模組」段落（≥ 50 行）即可成為獨立 wiki 頁。例：
+掃描 CLAUDE.md 的 `##` 一級標題；任何顯著的「子系統」或「模組」段落（≥ 50 行）即可成為獨立頁。例：
 
-| CLAUDE.md 段落 | 推導頁名 |
-|---|---|
-| `## MCP client` | `MCP-Integration` |
-| `## Sandbox` | `Security-and-Sandbox` |
-| `## Memory layer` | `Memory-System` |
-| `## Tool Subsystem` | `Tools` |
-| `## Skill 系統` | `Skill-System` |
+| CLAUDE.md 段落 | 推導 slug | Label |
+|---|---|---|
+| `## MCP client` | `mcp-integration` | MCP Integration |
+| `## Sandbox` | `security-and-sandbox` | Security and Sandbox |
+| `## Memory layer` | `memory-system` | Memory System |
+| `## Tool Subsystem` | `tools` | Tools |
+| `## Skill 系統` | `skill-system` | Skill System |
 
-### 命名規則
+### slug 命名規則
 
-- **檔名 = 頁標題**，Title-Case-With-Dashes
-  - `Getting Started` → `Getting-Started.md`
-  - `Memory System` → `Memory-System.md`
-  - `Security and Sandbox` → `Security-and-Sandbox.md`
-- 頁名直接對應 GitHub Wiki URL
-- ZH 版加 `.zh` 中綴：`Getting-Started.zh.md`
+- **slug = lowercase-kebab-case**，與 URL path（`/{slug}`）、檔名前綴完全一致
+  - `Getting Started` → slug `getting-started` → 檔名 `getting-started.md`
+  - `Memory System` → slug `memory-system` → 檔名 `memory-system.md`
+  - `Security and Sandbox` → slug `security-and-sandbox` → 檔名 `security-and-sandbox.md`
+- `home` 為保留 slug，永遠對應站台首頁（編譯後輸出為 `index.html`）
+- ZH 版加 `.zh` 中綴：`getting-started.zh.md`
+- **禁止**大寫字母、底線、空白混入 slug（`Getting_Started` / `gettingStarted` 皆不合法）
 
 ### 預設頁數
 
 通常 **6–12 頁**。少於 6 表示專案太小（README 即足夠）；超過 12 應拆專案。
+
+### NAV 分組
+
+每個頁面需歸入一個 `section`（導覽側欄分組），依頁面性質分組，常見分組：`Overview`（Home / Getting Started）、`Concepts`（Core Concepts / Architecture）、`Reference`（CLI / API Reference / Configuration）、以及專案特定子系統分組（如 `Tools`、`Security`）。分組數量與內容依專案調整，不強制固定清單。
 
 ---
 
 ## Step 3：寫入位置
 
 ```
-<project_root>/.wiki/
-├── Home.md                       (EN，雙語樹狀目錄表)
-├── Getting-Started.md            (EN)
-├── Getting-Started.zh.md         (ZH)
-├── Core-Concepts.md
-├── Core-Concepts.zh.md
-└── ...
-```
-
-**為什麼 `.wiki/` 而非 `wiki/`：** 慣例上 `.wiki/` 視為 sidecar、不影響 build；要推到 GitHub Wiki repo 時只需把 `.wiki/*.md` 推到對應的 `<repo>.wiki.git`。
-
----
-
-## Step 4：Home 頁面（EN，雙語樹狀目錄）
-
-**Home 永遠英文主體；表格中央雙語列表。**
-
-### 順序（強制）
-
-| 順序 | 區段 | 必要 |
-|---|---|---|
-| 0 | 生成標注 + `***` | **是** |
-| 1 | 專案標題 + 一句話定位 | **是** |
-| 2 | Highlights（3–6 個 bullet） | 否 |
-| 3 | 雙語頁面表 | **是** |
-| 4 | Source 區段（repo / spec 連結） | 否 |
-| 5 | （public 模式）Star history block | 否 |
-
-### 順序 0：生成標注
-
-```markdown
-> [!NOTE]
-> This wiki was generated by [SKILL](https://github.com/pardnchiu/skill-wiki-generate).
-
-***
-```
-
-**規則：** 通知後必接 `***` 分隔線。標注內**不**包含 contributor 圖、不重複 README 內容；wiki 是文件層、不是 landing page。
-
-### 順序 3：雙語頁面表
-
-```markdown
-## Pages
-
-| English | 中文 |
-|---|---|
-| [Getting Started](Getting-Started.md) | [新手入門](Getting-Started.zh.md) |
-| [Core Concepts](Core-Concepts.md) | [核心概念](Core-Concepts.zh.md) |
-| ... | ... |
+<project_root>/wiki-worker/
+├── build.js                              (md → html 編譯腳本；首次生成時從 skill 範本複製並客製化)
+├── sync-tags.js                          (GitHub Releases → docs/tags/*.md；首次生成時從 skill 範本複製並客製化)
+├── package.json                          (`{repo}-wiki`；首次生成時從 skill 範本複製)
+├── wrangler.toml                         (`{repo}-wiki`；Cloudflare Workers 部署設定；首次生成時從 skill 範本複製)
+└── public/
+    ├── docs.css                          (文件站樣式；**每次生成都從 skill 範本整檔覆蓋**，不手動維護)
+    ├── sitemap.xml                       (build.js 產出，勿手動編輯)
+    ├── robots.txt                        (build.js 產出，勿手動編輯)
+    ├── assets/                           (README 引用的本地圖片原樣複製於此，如 logo.svg、logo.png)
+    ├── docs/
+    │   ├── pages/                        (markdown 原始檔，唯一手動編輯的來源)
+    │   │   ├── home.md                   (EN)
+    │   │   ├── getting-started.md        (EN)
+    │   │   ├── getting-started.zh.md     (ZH)
+    │   │   └── ...
+    │   └── tags/                         (sync-tags.js 產出，勿手動編輯)
+    │       ├── v0.28.20.md               (GitHub release body 原文)
+    │       ├── ...
+    │       └── manifest.json             (tag → 發布日期)
+    ├── index.html                        (build.js 編譯產出 — EN 文件首頁，對應 pages/home.md)
+    ├── getting-started.html              (build.js 編譯產出 — EN)
+    ├── ...
+    ├── released/                         (build.js 編譯產出 — 版本紀錄，EN only)
+    │   ├── index.html                    (版本索引，路徑 /released/)
+    │   └── v0.28.20.html                 (路徑 /released/v0.28.20)
+    └── zh/
+        ├── index.html                    (build.js 編譯產出 — ZH 文件首頁，對應 pages/home.zh.md)
+        ├── getting-started.html          (build.js 編譯產出 — ZH)
+        └── ...
 ```
 
 **規則：**
-- 左欄全 EN（包含表頭 `English`）
-- 右欄全 ZH（包含表頭 `中文`）
-- 連結直指 sibling `.md` 檔（**不**加 `./` prefix；GitHub Wiki 渲染兩者皆可，但 sibling 寫法跨 wiki / repo 兩處皆通）
-- 列順序 = 從基礎到進階：Getting Started → Core Concepts → 主題頁 → Reference → Configuration
 
-### 順序 4：Source
+- **唯一手動編輯來源是 `wiki-worker/public/docs/pages/*.md`**；`wiki-worker/public/docs/` 底下的另一個子目錄 `tags/` 全由 `sync-tags.js` 產出，不手寫、不改字
+- `wiki-worker/public/*.html` 與 `wiki-worker/public/zh/*.html` 一律由 `node wiki-worker/build.js` 產生，**不得手動編輯 HTML**
+- `wiki-worker/public/index.html`（EN）與 `wiki-worker/public/zh/index.html`（ZH）即為文件首頁（也是站台首頁），分別對應 `pages/home.md` 與 `pages/home.zh.md`；不額外設 `/docs` 路徑前綴
+- 未提供 `.zh.md` 的頁面，build.js 只輸出 EN，不產生對應 ZH HTML（不得留空殼 ZH 檔）
+- 版本紀錄（`/released/`）**只有 EN**：內容是 GitHub release body 原文，不翻譯、不加語言切換 fab、不發 hreflang alternate
 
-```markdown
-## Source
+### Step 3.1：首次生成 — 複製並客製化 build.js / docs.css / package.json / wrangler.toml
 
-- Repository: [{owner}/{repo}](https://github.com/{owner}/{repo})
-- Architecture: [doc/architecture.md](https://github.com/{owner}/{repo}/blob/master/doc/architecture.md)
-- Living spec: [CLAUDE.md](https://github.com/{owner}/{repo}/blob/master/CLAUDE.md)
+若 `wiki-worker/build.js` 不存在：
+
+1. 複製範本：
+   ```bash
+   mkdir -p <project_root>/wiki-worker/public/docs/pages <project_root>/wiki-worker/public/zh
+   cp {skill_dir}/scripts/templates/build.js <project_root>/wiki-worker/build.js
+   cp {skill_dir}/scripts/templates/sync-tags.js <project_root>/wiki-worker/sync-tags.js
+   cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs.css
+   cp {skill_dir}/scripts/templates/package.json <project_root>/wiki-worker/package.json
+   cp {skill_dir}/scripts/templates/wrangler.toml <project_root>/wiki-worker/wrangler.toml
+   ```
+2. 先讀取 `build.js`，確認下列 placeholder 仍存在；**僅替換存在且值不同的 placeholder**，改為實際值（Step 0.3 收集的欄位）。目標值已正確時不寫入：
+
+   | Placeholder | 來源 |
+   |---|---|
+   | `{{SITE_NAME}}` | Step 0.3 `site_name`（套件專案＝`{owner}/{repo}`）。header logo 不吃這個值，範本固定用 `${REPO}` |
+   | `{{DOMAIN}}` | Step 0.3 `domain` |
+   | `{{REPO}}` | `{owner}/{repo}`（Step 0.4 推導） |
+   | `{{AUTHOR_NAME}}` | `~/.skill-readme-generate.json` `author_name` |
+   | `{{AUTHOR_NAME_ZH}}` | Step 0.3 `author_name_zh` |
+   | `{{AUTHOR_URL}}` | `~/.skill-readme-generate.json` `author_url` |
+   | `{{GTAG_ID}}` | Step 0.3 `gtag_id`（留空則保持空字串） |
+   | `{{PERSON_ID}}` / `{{PERSON_NAME}}` | Step 0.3 `person_id` / `person_name` |
+   | `// {{PERSON_ALT_NAMES}}` | Step 0.3 `person_alt_names`，展開為字串陣列元素（可含 `github_owner`） |
+   | `// {{SAME_AS}}` | Step 0.3 `same_as`，展開為字串陣列元素 |
+   | `{{ORG_NAME}}` | Step 0.3 `org_name`（空字串＝無組織） |
+   | `{{TAGLINE}}` | Step 0.3 `tagline`（署名列與 llms.txt 的定位文字，如 `Taiwan · Infrastructure Engineering`；空字串＝不輸出。**不**產生 Organization 節點——定位描述不是註冊實體） |
+| `{{ORG_ID}}` / `{{ORG_URL}}` | 有組織時：`{author_url 網站根}#organization` / 組織網站（無則 `author_url`）；無組織時留空字串 |
+   | `{{OG_IMAGE}}` | Step 0.3 `og_image`（已驗證；空字串＝不輸出圖片 meta） |
+   | `{{HOME_TITLE}}` / `{{HOME_TITLE_ZH}}` | Step 8.2 R1 規則產出的首頁 title（EN / ZH 各自撰寫） |
+   | `{{PROGRAMMING_LANGUAGE}}` | 主要語言（`go.mod` → `Go`、`package.json` → `JavaScript`／`TypeScript`、`pyproject.toml` → `Python`） |
+   | `{{LICENSE_URL}}` | `LICENSE` 第一行對應 SPDX 授權網址（`MIT License` → `https://opensource.org/licenses/MIT`）；無 LICENSE 留空 |
+
+   `sync-tags.js` 同樣有一個 `{{REPO}}`，用同一個 `{owner}/{repo}` 值替換。
+
+3. 將 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `NAV_ZH_SECTION` / `NAV_ZH_LABEL` / `DESCRIPTIONS_ZH` 這幾個物件依 Step 2 推導的頁面集合填入實際內容（**不得留 `// {{NAV}}` 等佔位註解**）
+4. 將 `package.json` 與 `wrangler.toml` 內的 `{{REPO_NAME}}` 替換為 repo 名稱（lowercase，取 `{repo}` 的部分，不含 owner），使兩者 `name` 欄位皆為 `{repo}-wiki`
+5. 提示使用者於 `wiki-worker/` 下執行 `npm install`（安裝 `marked` 與 `wrangler`）
+
+若 `wiki-worker/build.js` 已存在（非首次生成）：**只更新 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `NAV_ZH_*` 物件以反映新增或修改的頁面**，其餘邏輯、`sync-tags.js`、`package.json`、`wrangler.toml` 不動。
+
+`docs.css` **每次生成都整檔覆蓋**，不論是否首次：
+
+```bash
+cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs.css
 ```
 
-絕對 URL，不依賴 wiki 與 main repo 的相對位置。
+**為何整檔覆蓋而非逐條補：** `docs.css` 與 `build.js` 是同一份設計的兩半——build.js 每新增一個 class（`nav-date`／`header-version`／`content .byline`／`pre.mermaid`），樣式就住在範本 css 裡。逐條檢查「有沒有某個字樣」只能擋住當初寫進 SKILL.md 的那一條，其餘新 class 會靜默沒有樣式：**HTML 完全合法、build 不報錯、SEO 檢查全過，只有人眼看得出版面壞掉**。歷史事故（go-bot 2026-09-20）：舊 css 缺 `.nav-date`／`.header-version`／`.content .byline` 三條，版本側欄的日期因為沒有 `float:right` 直接黏在 tag 後面渲染成 `v0.5.02026-09-20`，署名列也沒有分隔線；當時 SKILL.md 只要求檢查 `pre.mermaid`，所以三條全部漏掉。css 是生成資產，與 `public/*.html` 同級，專案端沒有客製它的正當理由。
 
-### Home 中文化策略
+例外：既有 `build.js` 找不到 `PERSON_ID`、`OG_IMAGE`、`llms.txt` 任一字樣 → 代表是 SEO 內建前的舊範本。向使用者說明缺少的 Step 8 項目，取得同意後改依首次生成流程重新複製範本並填值（只保留既有 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`NAV_ZH_*` 的頁面資料，其餘版面與 meta 邏輯一律以新範本為準），不得靜默沿用舊範本略過 SEO。**不要保留舊範本的版面客製**——舊站看起來對的地方，可能只是新範本已改過的設計的舊版；例如 header logo 在範本是 `${REPO}`（`owner/repo`），沿用舊值會變成只有產品名。
 
-**不**做 `Home.zh.md`。Home 是 wiki 入口，須單一檔；雙語訊息已在表格內並列。GitHub Wiki UI 將 Home 視為特殊頁，雙頁會造成 sidebar 重複。
+### Step 3.2：同步版本紀錄（GitHub Releases）
+
+**版本紀錄不手寫，一律從 GitHub Releases 抓。** 編譯前執行：
+
+```bash
+cd <project_root>/wiki-worker && node sync-tags.js
+```
+
+| 項目 | 說明 |
+|---|---|
+| 來源 | `GET /repos/{owner}/{repo}/releases`（分頁跟隨 `Link: rel="next"` 直到取完） |
+| 產出 | 每個 release → `public/docs/tags/<tag>.md`（body 原文，CRLF 正規化為 LF） |
+| 產出 | `public/docs/tags/manifest.json`：`{ "<tag>": "YYYY-MM-DD" }`（`published_at` 的日期部分） |
+| 認證 | 匿名可跑（60 req/h）；設 `GITHUB_TOKEN` 環境變數即帶 `Authorization: Bearer`，私有 repo 必須設 |
+| 無 release 時 | 印 `No releases found` 並 exit 0；build.js 該區段整段跳過，站台照常編譯 |
+
+build.js 讀 `public/docs/tags/` 後自動產生：
+
+| 產出 | 路徑 | 內容 |
+|---|---|---|
+| 版本索引 | `/released/` | 依 minor 版本（`v0.28`）分組的全部 tag 清單 + 發布日期 |
+| 單版本頁 | `/released/<tag>` | 該 release 的 changelog；側欄為版本清單（含回文件站的連結） |
+| Header 版本徽章 | 所有頁 | 最新 tag，連向站內 `/released/<tag>`（不外連 GitHub，讀者留在文件站） |
+| 側欄入口 | 所有文件頁 | 底部 `Released` / `版本紀錄` 連結 |
+| sitemap | `sitemap.xml` | `/released/` priority 0.6；最新 5 個 tag 0.5、其餘 0.3，`lastmod` 取 manifest 日期 |
+
+**tag 排序**：`semverSort` 依 `major.minor.patch` 數值降冪（`v` 前綴會被去掉，缺項視為 0），非三段式數字 tag 不保證排序正確。
+
+**何時重跑**：專案發新版後、或使用者要求刷新文件站時；`--only` 模式下不重跑（版本紀錄與頁面內容無關）。
+
+### Step 3.3：編譯
+
+寫完 `pages/*.md` 與更新 `NAV` 後，執行：
+
+```bash
+cd <project_root>/wiki-worker && node build.js
+```
+
+**驗證編譯結果**：檢查 stdout 每行 `OK: ...` 對應預期輸出路徑，`SKIP: <slug>.md not found` 代表 NAV 內宣告的頁面缺少對應 md 檔，須修正。有 release 時另有一行 `OK: N release pages + index`。
 
 ---
 
-## Step 5：主題頁面（EN + ZH 成對）
+## Step 4：Home 頁面（`pages/home.md` + `pages/home.zh.md`）
+
+**Home 內容來源是專案既有的 README，不另外撰寫 Highlights / Source 等自製區段。** 這是 Home 唯一的例外規則 —— Step 5「禁止把 README 整段搬進文件」只適用於主題頁，Home 本身就是 README 的鏡像。
+
+### 內容來源優先序
+
+| 頁面 | 來源檔（依序找第一個存在的） | 找不到時 |
+|---|---|---|
+| `pages/home.md`（EN） | 專案根目錄 `README.md` | 必須存在；README 缺失視為專案未就緒，中止生成並回報使用者 |
+| `pages/home.zh.md`（ZH） | 1. 專案根目錄 `README.zh.md` 2. `doc/README.zh.md` | 兩者皆無 → 將 `README.md` 完整翻譯為 `home.zh.md`（沿用 Step 5 的 ZH 翻譯策略） |
+
+### 轉寫規則
+
+- **README 全文逐字原樣複製**到 `home.md`／`home.zh.md`，不摘要、不改寫、不刪減任何區段（含徽章列、`<p align="center">`、Star history）；章節順序與標題層級與 README 完全一致
+- README 內引用的本地圖片檔（如 `logo.svg`、`logo.png`、`doc/logo.svg`、`doc/logo.png` 等相對路徑圖片）**原樣複製檔案**到 `wiki-worker/public/assets/`（保留原檔名，去除 `doc/` 等來源前綴），並將 md 內對應的圖片路徑改寫為 `/assets/<檔名>`
+- README 內的相對連結（如 `./doc/architecture.md`、`#features`）若指向 repo 內檔案，改寫成指向 GitHub blob 的絕對 URL（`https://github.com/{owner}/{repo}/blob/master/...`）；指向本文件內章節的錨點連結（`#section`）維持相對，因為 build.js 會用同一套 `slugify()` 產生 heading id
+- 其餘內容（安裝步驟、功能說明、架構圖、授權）逐字保留，不精簡
+
+---
+
+## Step 5：主題頁面（`pages/<slug>.md` + `pages/<slug>.zh.md`）
 
 ### 區段順序（強制）
 
 | 順序 | 區段 | 必要 |
 |---|---|---|
-| 0 | 標題 + 跨語言連結 | **是** |
+| 0 | 標題（`# Page Title`） | **是** |
 | 1 | 一句話開場（描述本頁範圍） | **是** |
 | 2 | 主要章節（依頁面性質） | **是** |
-| 3 | （選用）Cross-references — 指向相關 wiki 頁 | 否 |
-
-### 順序 0：標題 + 跨語言連結
-
-**EN（`Page-Name.md`）：**
-```markdown
-# Page Name
-
-> [中文](Page-Name.zh.md)
-```
-
-**ZH（`Page-Name.zh.md`）：**
-```markdown
-# 頁面中文標題
-
-> [English](Page-Name.md)
-```
+| 3 | （選用）Cross-references — 指向相關頁面 slug | 否 |
 
 **規則：**
-- 跨語言連結用 blockquote 單行，置於標題之下、第一個 `##` 之前
-- 不加 `***` 分隔線（過度切割）
-
-### 主題頁不該有的東西
-
-| 元素 | 為何不放 |
-|---|---|
-| 生成標注 | Home 已標；每頁重複是 noise |
-| 徽章列 | wiki 不是 landing；徽章在 README |
-| Star history | 同上 |
-| Author 區段 | wiki 是文件、不是個人作品集 |
-| 版權 footer | 每頁 footer 對讀者無價值；License 連結進 README 即可 |
+- **不**在 md 內放跨語言連結 blockquote —— build.js 已在頁面右下角渲染 `lang-fab` 語言切換浮動按鈕，md 內容本身純粹是該語言版本的內容
+- **不**放生成標注 —— 文件站無需每頁重複「本文件由 SKILL 生成」；如需標注放進 repo 的 `README.md`
+- **不**放徽章列 / Star history / Author 區段 / 版權 footer —— 這些屬 landing page（`wiki-worker/public/index.html`）或 `README.md`，不屬文件內容
 
 ### ZH 翻譯策略
 
@@ -341,7 +427,73 @@ python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/proje
 | Tool / function / env name 拼寫錯 | 改為實際註冊名 |
 | Provider / 子系統數量陳述與實際清單不符 | 改為實際數量 |
 
-**為何靜默：** 使用者 draft 通常是備忘錄；wiki 是給其他人看的 source of truth，須對齊 code，不對齊 draft。
+**為何靜默：** 使用者 draft 通常是備忘錄；文件是給其他人看的 source of truth，須對齊 code，不對齊 draft。
+
+---
+
+## Step 8：SEO / AEO 內建優化（強制，每次生成）
+
+規則、研究協定與驗證腳本隨本 skill 附於 `scripts/seo/`，生成前完整讀取：
+
+| 檔案 | 用途 |
+|---|---|
+| `{skill_dir}/scripts/seo/research_protocol.md` | 研究協定：查詢集、Tier 分級、衝突裁決、digest 格式 |
+| `{skill_dir}/scripts/seo/knowledge_anchors.md` | 已驗證一手立場快照（A1–A8），每次研究後就地更新 |
+| `{skill_dir}/scripts/seo/optimization_rules.md` | R1–R10 判準／動作／邊界、禁止動作、嚴重度 |
+| `{skill_dir}/scripts/seo/output_format.md` | SEO 執行結果報告格式 |
+| `{skill_dir}/scripts/seo/analyze_seo.py` | 編譯後的頁面盤點（title／description／h1／OG／JSON-LD／hreflang／crawler 指令） |
+
+### Step 8.1：研究（完整生成時必跑）
+
+| 模式 | 行為 |
+|---|---|
+| 完整生成（無 `--only`） | 依 research_protocol 跑 **Phase A**（八組查詢並行＋實際抓取兩個 Tier 1 來源）與 **Phase B**（每個關鍵字、每個語言各搜一次；`llms.txt agent-facing` 查詢），digest 寫入 `wiki-worker/.doc/seo/research-{yyyy-MM-dd}.md`；結果與 knowledge_anchors 不符時就地更新 anchors 與其驗證日期 |
+| `--only` | 不重跑研究，沿用最新 digest；仍執行 Step 8.4 驗證 |
+| 網路不可用 | 明確告知「本次未取得最新研究，依 {anchors 驗證日期} 快照」，不得靜默沿用 |
+
+研究結論若推翻範本內建行為（例：官方重新支援某 schema、某 bot token 改名），先改專案 `build.js`，再依「禁止行為」最後一條回饋進 `scripts/templates/build.js`。
+
+### Step 8.2：規則 → 本 skill 的產出位置
+
+| 規則 | 產出 | 內容要求 |
+|---|---|---|
+| R1 Title | `HOME_TITLE`／`HOME_TITLE_ZH`；其餘頁由範本組成 `{label} - {SITE_NAME} Docs - {AUTHOR_NAME}`／`{label}｜{SITE_NAME} 文件｜{AUTHOR_NAME_ZH}` | 首頁 title 含主要**產品**關鍵字；EN ≤ 60 字元、ZH ≤ 30 字；各語言自身撰寫；品牌詞只出現一次 |
+| R2 Description | `DESCRIPTIONS`／`DESCRIPTIONS_ZH` 每頁一句 | 描述該頁實際內容；EN ≤ 160 字元、ZH ≤ 80 字；**禁止樣板句**；首頁 description 含產品類別＋作者名；版本頁由 `releaseDescription()` 取各自 `## Summary` |
+| R3 canonical／lang／hreflang | 範本內建 | `en` + `zh-Hant-TW` 兩條 alternate，**不輸出 `x-default`**（語言等權）；版本頁無 alternate |
+| R4 OG／Twitter | 範本內建 | 首頁 `og:type website`、其餘 `article`；`twitter:card summary`；`OG_IMAGE` 為空則不輸出圖片 meta，並在報告列「需提供 OG 圖」 |
+| R5 標題階層 | 主題頁 md 以 `# ` 開頭；首頁與版本頁由 `ensureH1()` 補 | 每頁恰一個 h1；主內容在 `<main>`、導覽在 `<nav>` |
+| R6 JSON-LD | 範本內建 `@graph` | Person（沿用作者網站 `@id`）＋ Organization（有 `ORG_NAME` 才有）＋ WebSite ＋ 首頁 `SoftwareSourceCode`／其餘 `TechArticle`；不得加頁面上不存在的 FAQ／評分 |
+| R7.1 robots.txt | 範本內建 | `User-agent: *` / `Allow: /` ＋ `Sitemap:`；不封鎖任何檢索型 bot |
+| R7.2 sitemap | 範本內建 | 含所有 EN／ZH／版本頁與 `lastmod` |
+| R7.3 llms.txt | 範本內建（由 NAV／DESCRIPTIONS 產生） | 文件站屬 agent-facing 開發文件例外，一律產生；不宣稱提升排名 |
+| R10 實體一致性 | 範本內建可見署名列 `<footer class="byline">` ＋ JSON-LD | 作者名、帳號、組織名在署名列、JSON-LD、llms.txt、作者網站寫法完全一致 |
+| R8／R9 | 只回報 | 套件登錄頁 metadata、`gh repo edit` 指令、README 首段建議寫進報告，**不執行** |
+
+### Step 8.3：品牌關鍵字的放置
+
+使用者要求「飽含」人名／帳號／組織名時，放在**署名列、JSON-LD、首頁 description、llms.txt**，每頁 title 只帶作者名一次。塞進每個 title／description／h2 屬關鍵字堆砌（optimization_rules 禁止動作），不得執行，並在回應說明原因。
+
+### Step 8.4：驗證與報告（強制）
+
+編譯後執行：
+
+```bash
+python3 {skill_dir}/scripts/seo/analyze_seo.py <project_root>/wiki-worker
+```
+
+逐頁確認（EN、ZH、版本頁全部）：
+
+| 檢查 | 通過條件 |
+|---|---|
+| h1 | 每頁恰 1 個 |
+| JSON-LD | 可解析，含 Person／WebSite（有組織時含 Organization），首頁為 `SoftwareSourceCode` |
+| 署名列 | 每頁有 `class="byline"` |
+| Twitter／OG | 每頁有 `twitter:card`；`OG_IMAGE` 非空時有 `og:image` |
+| hreflang／lang | 無 `x-default`；ZH 頁 `lang="zh-Hant-TW"` |
+| title／description 長度 | 符合 Step 8.2 R1／R2 上限；description 無重複 |
+| llms.txt | 其中 URL 集合與實際 HTML 頁面（版本單頁除外）差集皆為空 |
+
+結果依 output_format 寫入 `wiki-worker/.doc/seo/{yyyy-MM-dd_HH-mm}-applied.md`（已套用／未套用／需人工後續／驗證方式），並提醒使用者確認 `.doc/` 是否需加入 `.gitignore`。
 
 ---
 
@@ -349,64 +501,75 @@ python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/proje
 
 完成前驗證：
 
-### Home
-- [ ] `Home.md` 存在
-- [ ] 順序 0：生成標注 + `***`
-- [ ] 順序 3：雙語頁面表存在，每列雙欄連結指向實際存在的 `.md` 檔
-- [ ] 連結無 broken（每個 `[xxx](File.md)` 對應 `.wiki/File.md` 存在）
-- [ ] **無** `Home.zh.md`
+### 結構
+- [ ] `wiki-worker/build.js` 存在且無殘留 `{{PLACEHOLDER}}` 或 `// {{NAV}}` 等佔位註解
+- [ ] `wiki-worker/public/docs.css` 與 `scripts/templates/docs.css` 逐字相同（`diff` 無輸出）
+- [ ] build.js 輸出的每個自有 class 在 docs.css 都找得到規則（外部來源的 `fa-*`（Font Awesome）、`language-*`（marked 產生的 code fence）除外）：
+
+```bash
+grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-zA-Z0-9-]+' \
+  | grep -vE '^(fa|fa-.*|language-.*|class)$' | sort -u \
+  | while read -r c; do grep -q "\.$c" wiki-worker/public/docs.css || echo "MISSING CSS: .$c"; done
+```
+
+      有輸出代表新 class 沒樣式：先把規則補進 `scripts/templates/docs.css`，再整檔覆蓋回專案
+- [ ] `wiki-worker/sync-tags.js` 存在且 `REPO` 已是實際 `{owner}/{repo}`，無殘留 `{{REPO}}`
+- [ ] `wiki-worker/package.json` 與 `wiki-worker/wrangler.toml` 存在，`name` 皆為 `{repo}-wiki`，無殘留 `{{REPO_NAME}}`
+- [ ] `wiki-worker/public/docs/pages/home.md` 存在且內容逐字鏡像 `README.md`
+- [ ] README 引用的本地圖片（如有）已原樣複製到 `wiki-worker/public/assets/`，且 `home.md`／`home.zh.md` 內圖片路徑已改寫為 `/assets/<檔名>`
+- [ ] 每個 NAV 內宣告的 slug 都有對應 `pages/<slug>.md`
+
+### 編譯
+- [ ] `node wiki-worker/build.js` 執行成功，`SKIP` 訊息數為 0
+- [ ] `wiki-worker/public/index.html` 存在（EN 文件首頁）
+- [ ] 有 `.zh.md` 的頁面都產出對應 `wiki-worker/public/zh/<slug>.html`
+- [ ] `wiki-worker/public/sitemap.xml`／`robots.txt` 已更新
+
+### 版本紀錄（repo 有 GitHub Release 時）
+- [ ] `node sync-tags.js` 執行成功，`public/docs/tags/` 內 `.md` 數量與 GitHub release 數一致，且 `manifest.json` 每個 tag 都有日期
+- [ ] `public/released/index.html` 與每個 `<tag>.html` 已產出
+- [ ] Header 版本徽章顯示最新 tag 且連向站內 `/released/<tag>`
+- [ ] `sitemap.xml` 含 `/released/` 與各 tag URL
 
 ### 每個主題頁（EN + ZH 各驗證）
-- [ ] 順序 0：跨語言連結 blockquote 存在
-- [ ] 順序 0：對向語言檔存在於 `.wiki/`
-- [ ] 標題 = 檔名（去除 `-` 與 `.zh` 後）
+- [ ] 標題與 NAV 內 `label` 語意一致
 - [ ] 章節結構與對向語言版本對齊
 - [ ] 程式碼區塊指定語言識別碼
-- [ ] **無** 徽章 / star history / author 區段 / 版權 footer
-- [ ] **無** 重複的「This wiki was generated by ...」標注
+- [ ] **無** 徽章 / star history / author 區段 / 版權 footer / 生成標注
+
+### SEO / AEO（Step 8）
+- [ ] 完整生成時本次實際跑過 Phase A＋B，digest 已寫入 `wiki-worker/.doc/seo/research-{date}.md`
+- [ ] `wiki-worker/.doc/seo/config.json` 存在且欄位完整
+- [ ] `build.js` 無殘留 `{{PERSON_*}}` / `{{ORG_*}}` / `{{OG_IMAGE}}` / `{{HOME_TITLE*}}` / `// {{SAME_AS}}` 等 SEO placeholder
+- [ ] `OG_IMAGE` 為空或已驗證 HTTP 200 image；`PERSON_ID` 與作者網站既有 JSON-LD 一致（若有）
+- [ ] Step 8.4 表格全部通過，`public/llms.txt` 存在
+- [ ] `{ts}-applied.md` 已產出
 
 ### 共通
 - [ ] 所有 `{owner}` / `{repo}` / `{author_name}` placeholder 已替換
-- [ ] 所有檔名使用 Title-Case-With-Dashes
-- [ ] `.wiki/` 目錄存在；其他檔案未被誤觸（`--only` 模式）
+- [ ] 所有 slug 使用 lowercase-kebab-case
+- [ ] `--only` 模式下未指定頁面未被讀取或覆寫
 
 ---
 
 ## 工作流程總結
 
 ```
-0. 作者設定 → setup_config.py check
-1. 解析參數 → PRIVATE_MODE / REPO_PATH / ONLY / PAGES
+0. 作者設定 → setup_config.py check；首次生成額外詢問 site_name / domain / gtag_id 與 SEO 設定（寫入 wiki-worker/.doc/seo/config.json）
+1. 解析參數 → REPO_PATH / ONLY / PAGES
 2. 粗掃專案 → analyze_project.py（取符號索引）
-3. 讀完整檔 → 對每頁必讀的原始碼檔逐檔 Read（不只看 analyzer 摘要）
-4. 推導頁面 → 預設集 + CLAUDE.md 一級標題派生
-5. 提取參數 → owner / repo / 各頁所需資料
-6. 生成 Home → EN + 雙語表格 + 生成標注
-7. 生成每頁 → ZH 先寫、EN 翻譯（對齊章節結構）
-8. 靜默修正 → 對照 code / config 修正常見錯漏
-9. 驗證 → 跑檢查清單；連結 / 對向檔案存在性 + 引用的 symbol 確實存在
-10. 儲存 → `.wiki/` 子目錄（自動建立）
+3. 讀完整檔 → 對每頁必讀的原始碼檔逐檔完整讀取（不只看 analyzer 摘要）
+4. SEO 研究 → 讀 scripts/seo/ 規則檔；完整生成跑 Phase A＋B，寫 research digest（`--only` 跳過）
+5. 推導頁面 → 預設集 + CLAUDE.md 一級標題派生；每頁決定 slug / label / section
+6. 首次生成 → 複製 build.js / sync-tags.js / docs.css / package.json / wrangler.toml 範本，替換站台與 SEO placeholder，填入 NAV 等物件
+7. 生成 Home → pages/home.md + home.zh.md
+8. 生成每頁 → ZH 先寫、EN 翻譯（對齊章節結構），寫入 pages/<slug>.md(.zh.md)；DESCRIPTIONS／HOME_TITLE 依 Step 8.2
+9. 靜默修正 → 對照 code / config 修正常見錯漏
+10. 同步版本 → node wiki-worker/sync-tags.js（`--only` 模式跳過）
+11. 編譯 → node wiki-worker/build.js；檢查 stdout 無 SKIP
+12. SEO 驗證 → analyze_seo.py ＋ Step 8.4 逐頁檢查，寫 applied 報告
+13. 驗證 → 跑檢查清單；連結 / 對向檔案存在性 + 引用的 symbol 確實存在
 ```
-
----
-
-## 範例：Agenvoy 產出（10 主題 + Home）
-
-| 頁 | EN 行 | ZH 行 |
-|---|---|---|
-| Home.md | 29（雙語樹狀目錄表） | — |
-| Getting-Started | 61 | 61 |
-| Core-Concepts | 115 | 115 |
-| Providers | 71 | 71 |
-| Tools | 101 | 101 |
-| Memory-System | 63 | 63 |
-| Skill-System | 75 | 75 |
-| MCP-Integration | 110 | 110 |
-| Security-and-Sandbox | 98 | 98 |
-| CLI-Reference | 115 | 115 |
-| Configuration | 110 | 110 |
-
-平均單頁約 80–100 行；超過 200 行考慮拆分。
 
 ---
 
@@ -414,13 +577,25 @@ python3 ~/.claude/skills/wiki-generate/scripts/analyze_project.py /path/to/proje
 
 | 禁止項 | 為何 |
 |---|---|
-| 為每頁加生成標注 | Home 已標；重複是 noise |
-| Home 加 ZH 版（`Home.zh.md`） | GitHub Wiki Home 是特殊頁，雙頁造成 sidebar 重複 |
-| 主題頁加 Star history / 徽章 | wiki 是文件、不是 landing |
+| 手動編輯 `wiki-worker/public/*.html` 或 `wiki-worker/public/zh/*.html` | 這些是編譯產出，下次 `node wiki-worker/build.js` 會覆蓋；改動應動 `pages/*.md` |
+| 套件專案的 `site_name` 只寫專案名、省略 `{owner}/` | 同名套件在 npm／pkg.go.dev／GitHub 上大量存在，搜尋結果與 AI 引用需要 owner 才能定位到正確的那一個；只有具獨立品牌名的產品才免除 |
+| 在專案端維護 `docs.css`（逐條補規則、保留舊版樣式） | css 與 build.js 是同一份設計；專案端分岔後，新 class 會沒有樣式而版面靜默壞掉，且不會被任何自動檢查攔到。要改樣式就改 `scripts/templates/docs.css` 再整檔覆蓋回所有專案 |
+| 改了範本 `build.js` 的版面／meta 邏輯卻沒同步 `scripts/templates/docs.css` | 新 class 沒有對應規則＝上線即破版；兩檔必須同一次改完 |
+| 手寫或修改 `public/docs/tags/*.md`、`manifest.json`、`public/released/*.html` | 版本紀錄唯一 source of truth 是 GitHub Releases；手改會被下次 `sync-tags.js` / `build.js` 覆蓋，且讓站上內容與 release 頁不一致 |
+| 為版本紀錄寫 ZH 版或翻譯 changelog | release body 由發版流程產出且會持續新增，翻譯必然落後；`/released/` 刻意設計為 EN only（無 lang-fab、無 hreflang） |
+| slug 使用大寫或底線 | 與 URL path／檔名慣例不符，導致 build.js 找不到對應 md |
+| 在 md 內放跨語言 blockquote 連結 | build.js 已用 `lang-fab` 統一處理語言切換，md 內重複會造成版面衝突 |
+| 主題頁加 Star history / 徽章 / 生成標注 | 文件站不是 landing page，這些屬 `wiki-worker/public/index.html` 或 `README.md` |
 | 寫死頁面集合（不分析 CLAUDE.md） | 與專案脫節 |
-| 連結加 `./` prefix | 既與 GitHub Wiki rendering 不一致；sibling 寫法兩處皆通 |
 | 翻譯 function / env / API 名稱 | 識別符跨語言一致才能 grep |
-| 把 README 內容整段搬進 wiki | 讀者已看過 README；wiki 應深入細節 |
-| 跳過靜默修正 | wiki 對齊 code 是核心價值 |
-| **僅靠 analyzer JSON 生成內容、未讀完整檔** | analyzer 只抽符號名與 signature，function body 內的邏輯／分支／retry 策略全部漏掉，產出會是「正確但空洞」的 wiki |
+| 把 README 內容整段搬進文件 | 讀者已看過 README；文件應深入細節 |
+| 跳過靜默修正 | 文件對齊 code 是核心價值 |
+| **僅靠 analyzer JSON 生成內容、未讀完整檔** | analyzer 只抽符號名與 signature，function body 內的邏輯／分支／retry 策略全部漏掉，產出會是「正確但空洞」的文件 |
 | **引用未讀過的 symbol / 檔案路徑** | 幻覺風險最高來源；寫入前必須 grep 確認簽名與行號 |
+| **改動 build.js 邏輯時未同步 `scripts/templates/build.js`** | 若客製化屬通用改進（非該專案特有），應回饋進 skill 範本，否則下個專案重複踩坑 |
+| 完整生成時跳過 Step 8.1 研究、憑記憶決定 SEO 做法 | SEO / AEO 有效做法半年內會反轉（llms.txt、FAQ rich result 皆是例子）；研究是生成的強制 gate |
+| 把品牌詞塞進每頁 title／description／h2 | 關鍵字堆砌觸發垃圾內容判定；品牌詞的正確位置見 Step 8.3 |
+| 在 md 或 build.js 手寫頁面上不存在的 schema（FAQPage、aggregateRating、假作者） | 結構化資料垃圾，會被人工處分；JSON-LD 一律由範本 `@graph` 依可見內容產生 |
+| `OG_IMAGE` 填未驗證或捏造的圖片網址 | 分享卡顯示破圖；找不到真實圖檔就留空並列入待辦 |
+| 自行新造 Person `@id`，而作者網站已宣告過 | 同一人被拆成兩個實體，無法跨站歸戶 |
+| 輸出偏向單一語言的 `x-default` | 語言等權為固定政策 |
