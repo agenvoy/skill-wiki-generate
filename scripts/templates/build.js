@@ -339,7 +339,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   </head>
   <body>
     <header class="header">
-      <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')" aria-label="Menu"><i class="fa-solid fa-bars"></i></button>
+      <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open');revealNav()" aria-label="Menu"><i class="fa-solid fa-bars"></i></button>
       <a href="${isZh ? "/zh/" : "/"}" class="header-logo">${REPO}</a>
       <span class="header-sep"></span>
       <span class="header-title">${isZh ? "文件" : "Documentation"}</span>
@@ -355,6 +355,12 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       <aside class="toc">${toc}</aside>
     </div>
     <script>
+      function revealNav(){
+        var s=document.querySelector('.sidebar'),a=s&&s.querySelector('.nav-item.active');
+        if(!a||!s.clientHeight)return;
+        s.scrollTop=a.offsetTop-(s.clientHeight-a.offsetHeight)/2;
+      }
+      revealNav();
       document.querySelectorAll('.sidebar .nav-item').forEach(function(el){
         el.addEventListener('click',function(){document.querySelector('.sidebar').classList.remove('open')})
       });

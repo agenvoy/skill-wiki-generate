@@ -1,6 +1,6 @@
 # Knowledge Anchors
 
-**上次驗證日期：2026-09-21**
+**上次驗證日期：2026-10-02**
 
 本檔是「已驗證的一手立場」快照，**不是免跑研究的理由**。用途只有兩個：
 
@@ -52,6 +52,8 @@
 
 **雙檔模式（2026-09-07 補記）：** 落在例外內的專案，2026 主流做法是 `llms.txt`（索引，供定位）＋ `llms-full.txt`（全文，供深度 ingestion），Anthropic、Vercel、LangGraph 皆採此模式。
 
+**規格 v2（2026-10-02 補記）：** llmstxt.org 於 2026-08-10 發布 v2。檔案格式不變（H1 必要；blockquote 摘要、H2 連結清單 `- [name](url): notes`、`Optional` 段皆選用，`Optional` 僅剩慣例意義）。新增：HTML `<link>`／HTTP `Link:` 探索機制——`rel="describedby"` 指向適用的 llms.txt、`rel="alternate" type="text/markdown"` 指向該頁 Markdown 版；子路徑 llms.txt 涵蓋其下頁面且最具體者優先；Markdown 版命名可為 `page.html.md` 或 `page.md`；移除 `llms_txt2ctx` 展開工具，定位為「agent 讀索引後跟隨連結，連結應指向 LLM 友善內容」。以上皆為選用擴充，非搜尋排序訊號。
+
 **因此的判斷規則：** 專案是**供 AI agent 取用的開發者文件站**（SDK / CLI / library docs）→ 產生 llms.txt 有實際用途。行銷官網 / 一般內容站 → **不產生**；已存在者列為可移除項。
 
 ---
@@ -99,6 +101,8 @@
 | Google AI Overviews / AI Mode | Google 索引 | 不定 | 與一般搜尋同一套判準 |
 
 Yext 分析 680 萬則引用顯示，同一查詢下**僅約 11% 的被引用網域會跨平台重複出現**（Averi 於 2026-03 以 6.8 億則引用重測，同樣得到約 11%）。
+
+**每次回答引用數的研究分歧（2026-10-02 補記）：** 上表引用數為概略值；2026 年各研究量測差異大——5W《State of AI Citations 2026》（2026-05，綜整 680M+ 則引用）稱 ChatGPT 每次回答 3–10 個來源；QuickSEO 2026 統計 ChatGPT 7.92／Claude 5.67／Perplexity 21.87。跨平台重疊約 11%、AI 引用 URL 與 Google 前十名重疊約 12% 兩項結論在多份研究間一致。**引用數只用於說明引擎差異，不作為優化目標。**
 
 **OAI-SearchBot 不執行 JavaScript（2026-08-16 補記）：** Writesonic 於 2026-03 的實驗確認 ChatGPT 的檢索端為 HTML-only parser。**因此的判斷規則：** 主要內容僅在 client-side JS 執行後才出現的站台（CSR SPA），對 ChatGPT 等同不存在；SSR / SSG / 靜態 HTML 站台不受此限。此項優先於任何內容層優化——內容抓不到時，其餘皆無意義。
 

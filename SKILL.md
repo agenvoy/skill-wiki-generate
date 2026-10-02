@@ -222,7 +222,27 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
 
 ### 預設頁數
 
-通常 **6–12 頁**。少於 6 表示專案太小（README 即足夠）；超過 12 應拆專案。
+頁數由主題數決定，不設上限——每頁一個主軸（見下節），靠 NAV 分組維持可掃讀性。少於 6 頁表示專案太小（README 即足夠）。
+
+### 頁面主軸：一頁一個小主題（強制）
+
+目標：讀者從側欄標題點進去，十秒內能確認答案在不在這頁。一頁只回答一類問題，不同問題拆成不同頁，由側欄分組串起來。**分類可以細、可以多（NAV section 與頁數不設上限）；單頁內容不行。**
+
+| 判準（任一命中 → 拆頁） | 例 |
+|---|---|
+| 開場一句話要用「與／以及」串起 3 個以上主題才講得完 | `providers`：供應商清單、特定供應商細節、模型路由、reasoning、自訂端點、失敗處理 |
+| 兩個 `##` 段落回答不同類提問（「有哪些」／「怎麼選」／「怎麼設定」） | 「支援哪些供應商」與「dispatcher 怎麼挑模型」 |
+| 英文原始檔超過約 6 KB，或 `##` 超過 4 個 | 長度本身就是拆頁理由，不需另找其他判準 |
+| 某個 `##` 段落已有自己的子標題與表格，自成一題 | 一個獨立的路由子系統 |
+
+拆頁做法：
+
+- 子頁 slug 以主題 slug 為前綴（`providers-routing`），NAV 中相鄰排列；需要時直接為它開新 section，不必擠進既有分組
+- 非首次生成時，原 slug 保留為入口頁（第一個子主題，或簡短概覽＋子頁連結），既有外部連結不失效；並把指向已搬走段落的 `/<slug>#anchor` 站內連結改到新頁
+- 每個新頁同步填 `NAV`、`DESCRIPTIONS`、`KEYWORDS`、`NAV_ZH_LABEL`、`DESCRIPTIONS_ZH`
+- 英中同步拆，兩邊頁面與段落一一對應
+
+**為何：** 一篇塞滿所有子題，讀者得捲完整頁或靠 Ctrl-F 才找得到答案；拆成小頁後側欄本身就是目錄。`llms.txt` 的讀者同理——小頁讓單次抓取就命中所需內容。
 
 ### NAV 分組
 
@@ -314,7 +334,15 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
 4. 將 `package.json` 與 `wrangler.toml` 內的 `{{REPO_NAME}}` 替換為 repo 名稱（lowercase，取 `{repo}` 的部分，不含 owner），使兩者 `name` 欄位皆為 `{repo}-wiki`
 5. 提示使用者於 `wiki-worker/` 下執行 `npm install`（安裝 `marked` 與 `wrangler`）
 
-若 `wiki-worker/build.js` 已存在（非首次生成）：**只更新 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `NAV_ZH_*` 物件以反映新增或修改的頁面**，其餘邏輯、`sync-tags.js`、`package.json`、`wrangler.toml` 不動。
+若 `wiki-worker/build.js` 已存在（非首次生成）：**只更新 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `NAV_ZH_*` 物件以反映新增或修改的頁面**，其餘邏輯、`sync-tags.js`、`package.json`、`wrangler.toml` 不動。例外：既有 `build.js` 找不到 `revealNav` → 從範本移植該函式與手機選單按鈕的呼叫（見下方「側欄行為」），其餘不動。
+
+### 側欄行為（範本內建）
+
+| 行為 | 實作 | 為何 |
+|---|---|---|
+| 載入時側欄捲到當前頁 | 頁面模板的 `revealNav()`：以 `.sidebar` 自身的 `scrollTop` 把 `.nav-item.active` 置中；載入時呼叫一次，手機版選單按鈕展開時再呼叫一次（收合時 `display:none` 量不到位置） | 頁數多時當前項目常在側欄可視範圍外，讀者看不出自己在哪一節。只捲側欄、不用 `scrollIntoView`，避免連帶捲動整頁 |
+| 側欄不顯示 scrollbar | `docs.css`：`.sidebar{scrollbar-width:none}.sidebar::-webkit-scrollbar{display:none}`，仍可滾輪／觸控捲動 | 使用者要求；細條 scrollbar 在側欄是視覺雜訊 |
+
 
 `docs.css` **每次生成都整檔覆蓋**，不論是否首次：
 
@@ -395,7 +423,7 @@ cd <project_root>/wiki-worker && node build.js
 | 順序 | 區段 | 必要 |
 |---|---|---|
 | 0 | 標題（`# Page Title`） | **是** |
-| 1 | 一句話開場（描述本頁範圍） | **是** |
+| 1 | 一句話開場（描述本頁範圍；講不完就代表該拆頁，見 Step 2「頁面主軸」） | **是** |
 | 2 | 主要章節（依頁面性質） | **是** |
 | 3 | （選用）Cross-references — 指向相關頁面 slug | 否 |
 
