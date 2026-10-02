@@ -33,6 +33,9 @@
 | 6 | `Core Web Vitals {YYYY} thresholds LCP INP CLS` | 效能門檻變動 |
 | 7 | `schema.org structured data {YYYY} deprecated rich results changes` | schema 支援變動 |
 | 8 | `llms.txt {YYYY} adoption support Google OpenAI Anthropic` | llms.txt 現況 |
+| 9 | `Bing Webmaster Tools AI Performance IndexNow ChatGPT {YYYY}` | Bing 索引與 ChatGPT / Copilot 檢索關係、BWT 報告變動 |
+| 10 | `generative engine optimization GEO survey arxiv {YYYY}` | GEO 學術證據現況（哪些技巧有可重現效果） |
+| 11 | `Google spam policy generative AI responses {YYYY}` | 操弄 AI 回答的處分範圍變動 |
 
 ### A-2 必抓一手來源
 
@@ -42,8 +45,43 @@
 |---|---|
 | `https://developers.google.com/search/docs/fundamentals/ai-optimization-guide` | Google 對 AI 搜尋優化的現行立場（逐條列出建議） |
 | `https://developers.google.com/search/updates` | 近半年文件變更清單 |
+| `https://developers.openai.com/api/docs/bots` | OpenAI 各 user-agent 用途與 robots.txt 行為 |
+| `https://support.claude.com/en/articles/8896518` | Anthropic 各 crawler 用途與 robots.txt 行為 |
+| `https://developers.google.com/search/docs/crawling-indexing/google-user-triggered-fetchers` | Google 使用者觸發型 fetcher 清單（含 `Google-Agent`） |
 
 若上述 URL 404 或改版，記錄實際狀況並改抓 Google Search Central 首頁找對應新頁面。**不得因抓不到就跳過本步驟並沿用記憶。**
+
+### A-5 標準與提案追蹤（固定執行）
+
+目的：偵測 AI 讀取／使用控制機制在標準組織與主要廠商的最新狀態，與 knowledge_anchors **A12** 追蹤表逐列比對。只看搜尋摘要不算數，下列頁面一律實際抓取；datatracker 與 IANA 優先抓原始資料（JSON API、CSV），因為摘要工具會改寫欄位。
+
+| # | 實抓來源 | 要回答的問題 |
+|---|---|---|
+| S1 | `https://www.iana.org/assignments/well-known-uris/well-known-uris-1.csv` | 與 AI、agent、bot、LLM、content usage、MCP 相關的 `/.well-known/` 後綴有無新增或狀態變動（provisional → permanent） |
+| S2 | `https://datatracker.ietf.org/wg/aipref/documents/`、`https://datatracker.ietf.org/wg/aipref/about/` | aipref vocab／attach 的最新版號、是否進入 WGLC、送 IESG、成為 RFC；有無新採納的 draft |
+| S3 | `https://datatracker.ietf.org/wg/webbotauth/documents/` | Web Bot Auth 進度；是否新增網站端需要做的事 |
+| S4 | `https://llmstxt.org/` | llms.txt 規格版本與修改日 |
+| S5 | `https://developers.cloudflare.com/bots/additional-configurations/managed-robots-txt/` | Cloudflare Content Signals 語法與詞彙 |
+| S6 | `https://modelcontextprotocol.io/community/working-groups/server-card` | MCP Server Card 的 well-known 路徑是否定案 |
+| S7 | A-2 的 Google／OpenAI／Anthropic crawler 頁，加 Bing Webmaster Blog | 是否有廠商官方宣告支援 `Content-Usage`、Content-Signal、TDMRep、llms.txt |
+
+追加查詢（並行）：
+
+| 查詢 | 要回答的問題 |
+|---|---|
+| `IETF Internet-Draft AI crawler OR "AI preferences" OR "agent discovery" {YYYY}` | A12 以外的新 draft；個人 draft 被 WG 採納 |
+| `W3C community group OR working group AI agents web content {YYYY}` | W3C 新成立或升級的工作 |
+| `".well-known" AI agent OR LLM discovery proposal {YYYY}` | 新的 well-known 提案 |
+
+判讀規則：
+
+| 狀態變化 | 動作 |
+|---|---|
+| 與 A12 相同 | digest 記「無變動」 |
+| 版號／日期更新但階段未變（仍為 draft） | 更新 A12，不改規則 |
+| 進入可實作門檻：成為 RFC、W3C Recommendation、IANA permanent，或主要廠商官方頁宣告支援 | 更新 A12、在 optimization_rules 新增或修改規則；適用於本專案者列入規劃；有範本的 skill 同步改範本並升版 |
+| 語法或路徑改變（如 header 名、檔案路徑） | 已實作者列為 High 修正項，範本同步 |
+| 被撤回、Replaced、或廠商宣告不支援 | 更新 A12；已實作者列為可移除項 |
 
 ### A-3 來源分級（衝突時的裁決順序）
 
@@ -100,6 +138,10 @@ Phase A 結束時尚未知道關鍵字與地區，故必須補跑第二輪。
 ## 業界迷思（與 Tier 1 衝突，不採納）
 | 主張 | 推翻它的 Tier 1 依據 | 對本專案的意涵 |
 |---|---|---|
+
+## 標準追蹤（A-5）
+| 名稱 | A12 記錄的狀態 | 本次實抓狀態 | 變化 | 來源 URL |
+|---|---|---|---|---|
 
 ## 與上次執行的差異
 {若 wiki-worker/.doc/seo/ 存在舊 digest，逐項比對並列出變動；無舊檔則寫「首次執行」}

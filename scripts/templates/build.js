@@ -1,6 +1,9 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const path = require("path");
 const { marked } = require("marked");
+
+const TEMPLATE_VERSION = "1.5.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
@@ -21,6 +24,10 @@ const SAME_AS = [
   // {{SAME_AS}}
 ];
 const ORG_NAME = "{{ORG_NAME}}"; // empty string omits the Organization node and byline segment
+const ORG_NAME_ZH = "{{ORG_NAME_ZH}}";
+const ORG_SAME_AS = [
+  // {{ORG_SAME_AS}}
+];
 const TAGLINE = "{{TAGLINE}}"; // byline-only positioning text (e.g. "Taiwan · Infrastructure Engineering"); never becomes an Organization entity
 const ORG_ID = "{{ORG_ID}}";
 const ORG_URL = "{{ORG_URL}}";
@@ -30,6 +37,9 @@ const HOME_TITLE_ZH = "{{HOME_TITLE_ZH}}";
 const PROGRAMMING_LANGUAGE = "{{PROGRAMMING_LANGUAGE}}";
 const LICENSE_URL = "{{LICENSE_URL}}"; // empty string omits license
 const ZH_LANG = "zh-Hant-TW";
+const AI_TRAIN = "{{AI_TRAIN}}";
+const AI_INPUT = "{{AI_INPUT}}";
+const AI_SEARCH = "{{AI_SEARCH}}";
 
 const OWNER = REPO.split("/")[0];
 
@@ -38,6 +48,8 @@ const OUT_DIR = path.join(__dirname, "public");
 const ZH_DIR = path.join(__dirname, "public/zh");
 const TAGS_DIR = path.join(__dirname, "public/docs/tags"); // release notes synced by sync-tags.js
 const RELEASED_DIR = path.join(OUT_DIR, "released");
+const SYMBOLS_PATH = path.join(__dirname, "public/docs/symbols.json");
+const DATES_PATH = path.join(__dirname, "public/docs/dates.json");
 
 // newest first; missing parts count as 0 so "v1.2" sorts against "v1.2.0"
 function semverSort(a, b) {
@@ -73,6 +85,19 @@ function groupByMinor(tags) {
 }
 
 const { tags: TAGS, dates: TAG_DATES } = loadTags();
+
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const BUILD_DATE = localDate(new Date());
+const DATES = fs.existsSync(DATES_PATH) ? JSON.parse(fs.readFileSync(DATES_PATH, "utf-8")) : {};
+function stampDates(key, md) {
+  const hash = crypto.createHash("sha256").update(md).digest("hex");
+  const prev = DATES[key];
+  if (!prev) DATES[key] = { hash, published: BUILD_DATE, modified: BUILD_DATE };
+  else if (prev.hash !== hash) DATES[key] = { ...prev, hash, modified: BUILD_DATE };
+  return DATES[key];
+}
 const LATEST_VERSION = TAGS[0] || "";
 
 // === Page navigation — filled in by wiki-generate from the derived page set ===
@@ -191,6 +216,13 @@ function ensureH1(html, text) {
   return `<h1 id="${slugify(text)}">${text}</h1>\n${html}`;
 }
 
+function markdownHref(slug, isZh) {
+  if (slug === "released") return "/released/index.md";
+  if (slug.startsWith("released/")) return `/${slug}.md`;
+  const base = isZh ? "/zh" : "";
+  return slug === "home" ? `${base}/index.md` : `${base}/${slug}.md`;
+}
+
 function profileLabel(url) {
   const host = new URL(url).hostname.replace(/^www\./, "");
   const known = { "github.com": "GitHub", "linkedin.com": "LinkedIn", "x.com": "X", "twitter.com": "X" };
@@ -203,7 +235,7 @@ const BYLINE_LINKS = SAME_AS
   .map(u => ` · <a href="${u}" target="_blank" rel="noopener">${profileLabel(u)}</a>`)
   .join("");
 
-function renderPage(slug, title, description, keywords, sidebar, content, toc, lang = "en") {
+function renderPage(slug, title, description, keywords, sidebar, content, toc, lang = "en", dates = null) {
   const isZh = lang === "zh";
   const isReleased = slug === "released" || slug.startsWith("released/");
   const base = isZh ? `${DOMAIN}/zh` : DOMAIN;
@@ -239,16 +271,22 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     "url": AUTHOR_URL,
     ...(SAME_AS.length ? { "sameAs": SAME_AS } : {}),
   };
+  const orgName = isZh && ORG_NAME_ZH ? ORG_NAME_ZH : ORG_NAME;
+  const orgAltName = orgName === ORG_NAME ? ORG_NAME_ZH : ORG_NAME;
   const org = ORG_NAME
     ? {
       "@type": "Organization",
       "@id": ORG_ID,
-      "name": ORG_NAME,
+      "name": orgName,
+      ...(orgAltName ? { "alternateName": orgAltName } : {}),
       "url": ORG_URL,
       "founder": { "@id": PERSON_ID },
-      "sameAs": [`https://github.com/${OWNER}`],
+      ...(ORG_SAME_AS.length ? { "sameAs": ORG_SAME_AS } : {}),
     }
     : null;
+  const dateProps = dates
+    ? { "datePublished": dates.published, "dateModified": dates.modified }
+    : {};
   const publisher = { "@id": org ? ORG_ID : PERSON_ID };
   const website = {
     "@type": "WebSite",
@@ -270,6 +308,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       ...(PROGRAMMING_LANGUAGE ? { "programmingLanguage": PROGRAMMING_LANGUAGE } : {}),
       ...(LICENSE_URL ? { "license": LICENSE_URL } : {}),
       ...(LATEST_VERSION ? { "version": LATEST_VERSION } : {}),
+      ...dateProps,
       "author": { "@id": PERSON_ID },
       "publisher": publisher,
     }
@@ -280,18 +319,22 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       "url": canonical,
       "inLanguage": inLanguage,
       "isPartOf": { "@id": website["@id"] },
+      ...dateProps,
       "author": { "@id": PERSON_ID },
       "publisher": publisher,
     };
   const graph = org ? [person, org, website, node] : [person, website, node];
   const jsonLd = JSON.stringify({ "@context": "https://schema.org", "@graph": graph });
 
-  const orgSegment = ORG_NAME ? ` · ${ORG_NAME}` : "";
+  const orgSegment = ORG_NAME ? ` · ${orgName}` : "";
+  const dateLabel = isReleased ? "Released" : (isZh ? "最後更新" : "Last updated");
+  const dateSegment = dates ? ` · ${dateLabel} <time datetime="${dates.modified}">${dates.modified}</time>` : "";
   const taglineSegment = TAGLINE ? ` · ${TAGLINE}` : "";
   const ownerLink = `<a href="https://github.com/${OWNER}" target="_blank" rel="noopener">${OWNER}</a>`;
+  const agentLinks = ` · <a href="/llms.txt">llms.txt</a> · <a href="${markdownHref(slug, isZh)}" type="text/markdown">${isZh ? "本頁 Markdown" : "Markdown"}</a>`;
   const byline = isZh
-    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${ownerLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}</footer>`
-    : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${ownerLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}</footer>`;
+    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${ownerLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`
+    : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${ownerLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`;
 
   const ogImage = OG_IMAGE
     ? `
@@ -321,6 +364,8 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     <meta name="author" content="${AUTHOR_NAME}" />
     <link rel="author" href="${AUTHOR_URL}" />
     <link rel="canonical" href="${canonical}" />
+    <link rel="alternate" type="text/markdown" href="${DOMAIN}${markdownHref(slug, isZh)}" />
+    <link rel="describedby" href="${DOMAIN}/llms.txt" />
     ${altLinks}<meta property="og:title" content="${fullTitle}" />
     <meta property="og:description" content="${description}" />
     <meta property="og:url" content="${canonical}" />
@@ -402,6 +447,9 @@ const allSlugs = NAV.flatMap(g => g.items.map(i => i.slug));
 let built = 0;
 let builtZh = 0;
 const zhSlugs = [];
+const pageMd = {};
+const fullEn = [];
+const fullZh = [];
 
 for (const slug of allSlugs) {
   const mdPath = path.join(PAGES_DIR, `${slug}.md`);
@@ -420,13 +468,16 @@ for (const slug of allSlugs) {
   const kw = KEYWORDS[slug] || `${SITE_NAME.toLowerCase()}, documentation`;
   const sidebar = buildSidebar(slug, "en");
   const toc = buildTOC(html);
-  const page = renderPage(slug, label, desc, kw, sidebar, html, toc, "en");
+  const page = renderPage(slug, label, desc, kw, sidebar, html, toc, "en", stampDates(`en:${slug}`, md));
 
   const outPath = slug === "home"
     ? path.join(OUT_DIR, "index.html")
     : path.join(OUT_DIR, `${slug}.html`);
 
   fs.writeFileSync(outPath, page);
+  fs.writeFileSync(path.join(OUT_DIR, markdownHref(slug, false)), md);
+  pageMd[slug] = md;
+  fullEn.push(`---\n\nSource: ${DOMAIN}${markdownHref(slug, false)}\n\n${md.trim()}\n`);
   built++;
   console.log(`OK: ${outPath}`);
 
@@ -439,11 +490,14 @@ for (const slug of allSlugs) {
     const zhDesc = DESCRIPTIONS_ZH[slug] || desc;
     const zhSidebar = buildSidebar(slug, "zh");
     const zhToc = buildTOC(zhHtml, "zh");
-    const zhPage = renderPage(slug, zhLabel, zhDesc, kw, zhSidebar, zhHtml, zhToc, "zh");
+    const zhMd = fs.readFileSync(zhMdPath, "utf-8");
+    const zhPage = renderPage(slug, zhLabel, zhDesc, kw, zhSidebar, zhHtml, zhToc, "zh", stampDates(`zh:${slug}`, zhMd));
     const zhOut = slug === "home"
       ? path.join(ZH_DIR, "index.html")
       : path.join(ZH_DIR, `${slug}.html`);
     fs.writeFileSync(zhOut, zhPage);
+    fs.writeFileSync(path.join(OUT_DIR, markdownHref(slug, true)), zhMd);
+    fullZh.push(`---\n\nSource: ${DOMAIN}${markdownHref(slug, true)}\n\n${zhMd.trim()}\n`);
     builtZh++;
     zhSlugs.push(slug);
     console.log(`OK: ${zhOut}`);
@@ -463,8 +517,10 @@ if (TAGS.length) {
     const toc = buildTOC(html);
     const desc = releaseDescription(md, tag);
     const kw = `${SITE_NAME.toLowerCase()}, release notes, changelog, ${tag}`;
-    const page = renderPage(`released/${tag}`, `${tag} Release Notes`, desc, kw, sidebar, html, toc);
+    const releaseDates = TAG_DATES[tag] ? { published: TAG_DATES[tag], modified: TAG_DATES[tag] } : null;
+    const page = renderPage(`released/${tag}`, `${tag} Release Notes`, desc, kw, sidebar, html, toc, "en", releaseDates);
     fs.writeFileSync(path.join(RELEASED_DIR, `${tag}.html`), page);
+    fs.writeFileSync(path.join(RELEASED_DIR, `${tag}.md`), md);
     releaseTags.push(tag);
   }
 
@@ -488,40 +544,40 @@ if (TAGS.length) {
     buildTOC(listHtml),
   );
   fs.writeFileSync(path.join(RELEASED_DIR, "index.html"), indexPage);
+  let listMd = `# Release Notes\n\nAll ${SITE_NAME} releases.\n`;
+  for (const [minor, versions] of groupByMinor(TAGS)) {
+    listMd += `\n## ${minor}\n\n`;
+    for (const v of versions) listMd += `- [${v}](${DOMAIN}/released/${v}.md)${TAG_DATES[v] ? ` ${TAG_DATES[v]}` : ""}\n`;
+  }
+  fs.writeFileSync(path.join(RELEASED_DIR, "index.md"), listMd);
   console.log(`OK: ${releaseTags.length} release pages + index`);
 }
 
 // === sitemap.xml ===
-function toLocalDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-const today = toLocalDateStr(new Date());
-function fileLastmod(p, fallback) {
-  return fs.existsSync(p) ? toLocalDateStr(fs.statSync(p).mtime) : fallback;
-}
+fs.writeFileSync(DATES_PATH, JSON.stringify(DATES, null, 2) + "\n");
+const lastmodOf = key => DATES[key]?.modified || BUILD_DATE;
 let sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
-sitemap += `  <url><loc>${DOMAIN}/</loc><changefreq>weekly</changefreq><priority>1.0</priority><lastmod>${today}</lastmod></url>\n`;
+sitemap += `  <url><loc>${DOMAIN}/</loc><changefreq>weekly</changefreq><priority>1.0</priority><lastmod>${lastmodOf("en:home")}</lastmod></url>\n`;
 for (const slug of allSlugs) {
   if (slug === "home") continue;
-  const mdPath = path.join(PAGES_DIR, `${slug}.md`);
-  if (!fs.existsSync(mdPath)) continue;
-  const lastmod = fileLastmod(mdPath, today);
+  if (!DATES[`en:${slug}`]) continue;
+  const lastmod = lastmodOf(`en:${slug}`);
   sitemap += `  <url><loc>${DOMAIN}/${slug}</loc><changefreq>monthly</changefreq><priority>0.6</priority><lastmod>${lastmod}</lastmod></url>\n`;
 }
 if (zhSlugs.length) {
-  sitemap += `  <url><loc>${DOMAIN}/zh/</loc><changefreq>weekly</changefreq><priority>0.9</priority><lastmod>${today}</lastmod></url>\n`;
+  sitemap += `  <url><loc>${DOMAIN}/zh/</loc><changefreq>weekly</changefreq><priority>0.9</priority><lastmod>${lastmodOf("zh:home")}</lastmod></url>\n`;
   for (const slug of zhSlugs) {
     if (slug === "home") continue;
-    const lastmod = fileLastmod(path.join(PAGES_DIR, `${slug}.zh.md`), today);
+    const lastmod = lastmodOf(`zh:${slug}`);
     sitemap += `  <url><loc>${DOMAIN}/zh/${slug}</loc><changefreq>monthly</changefreq><priority>0.5</priority><lastmod>${lastmod}</lastmod></url>\n`;
   }
 }
 if (releaseTags.length) {
-  sitemap += `  <url><loc>${DOMAIN}/released/</loc><changefreq>weekly</changefreq><priority>0.6</priority><lastmod>${today}</lastmod></url>\n`;
+  sitemap += `  <url><loc>${DOMAIN}/released/</loc><changefreq>weekly</changefreq><priority>0.6</priority><lastmod>${TAG_DATES[releaseTags[0]] || BUILD_DATE}</lastmod></url>\n`;
   for (let i = 0; i < releaseTags.length; i++) {
     const tag = releaseTags[i];
     const pri = i < 5 ? 0.5 : 0.3; // only recent releases stay worth crawling
-    const lastmod = TAG_DATES[tag] || fileLastmod(path.join(TAGS_DIR, `${tag}.md`), today);
+    const lastmod = TAG_DATES[tag] || BUILD_DATE;
     sitemap += `  <url><loc>${DOMAIN}/released/${tag}</loc><changefreq>yearly</changefreq><priority>${pri}</priority><lastmod>${lastmod}</lastmod></url>\n`;
   }
 }
@@ -530,23 +586,76 @@ fs.writeFileSync(path.join(__dirname, "public/sitemap.xml"), sitemap);
 console.log(`OK: sitemap.xml`);
 
 // === robots.txt ===
+const aiprefPairs = [["train-ai", AI_TRAIN], ["ai-use", AI_INPUT], ["search", AI_SEARCH]].filter(([, v]) => v === "y" || v === "n");
+const signalPairs = [["search", AI_SEARCH], ["ai-input", AI_INPUT], ["ai-train", AI_TRAIN]].filter(([, v]) => v === "y" || v === "n");
+const contentUsage = aiprefPairs.map(([k, v]) => `${k}=${v}`).join(", ");
+const contentSignal = signalPairs.map(([k, v]) => `${k}=${v === "y" ? "yes" : "no"}`).join(", ");
 const robots = `User-agent: *
 Allow: /
-
+${contentUsage ? `Content-Usage: ${contentUsage}\n` : ""}${contentSignal ? `Content-signal: ${contentSignal}\n` : ""}
 Sitemap: ${DOMAIN}/sitemap.xml
 `;
 fs.writeFileSync(path.join(__dirname, "public/robots.txt"), robots);
 console.log("OK: robots.txt");
 
+const headers = `${contentUsage ? `/*\n  Content-Usage: ${contentUsage}\n\n` : ""}/*.md
+  Content-Type: text/markdown; charset=utf-8
+
+/*.txt
+  Content-Type: text/plain; charset=utf-8
+`;
+fs.writeFileSync(path.join(__dirname, "public/_headers"), headers);
+console.log("OK: _headers");
+
+const fullHeader = (desc, note) => `# ${SITE_NAME}\n\n> ${desc}\n\n${note}\n\n`;
+fs.writeFileSync(path.join(OUT_DIR, "llms-full.txt"), fullHeader(DESCRIPTIONS.home, "Every documentation page in navigation order; each section starts with its source URL.") + fullEn.join("\n"));
+console.log("OK: llms-full.txt");
+if (fullZh.length) {
+  fs.writeFileSync(path.join(ZH_DIR, "llms-full.txt"), fullHeader(DESCRIPTIONS_ZH.home || DESCRIPTIONS.home, "依導覽順序收錄所有文件頁；每段開頭標示來源 URL。") + fullZh.join("\n"));
+  console.log("OK: zh/llms-full.txt");
+}
+
+function symbolIndex() {
+  if (!fs.existsSync(SYMBOLS_PATH)) return [];
+  const symbols = JSON.parse(fs.readFileSync(SYMBOLS_PATH, "utf-8"));
+  const navOrder = allSlugs.filter(s => pageMd[s] && s !== "home");
+  const liveText = Object.fromEntries(navOrder.map(slug => [slug, pageMd[slug].split("\n").filter(l => !/Removed in|移除於/.test(l)).join("\n")]));
+  const groups = new Map();
+  for (const sym of symbols) {
+    const word = new RegExp(`\`[^\`\n]*(?<![\\w-])${sym.name}(?![\\w-])[^\`\n]*\``, "g");
+    const hits = navOrder
+      .map(slug => ({ slug, count: (liveText[slug].match(word) || []).length }))
+      .filter(h => h.count > 0);
+    if (!hits.length) continue;
+    const best = list => list.sort((a, b) => b.count - a.count)[0];
+    const ref = best(hits.filter(h => h.slug.startsWith("api-reference")));
+    const concept = best(hits.filter(h => !h.slug.startsWith("api-reference")));
+    const pages = [ref, concept].filter(Boolean).map(h => h.slug);
+    const key = `${sym.name}|${pages.join(",")}`;
+    if (!groups.has(key)) groups.set(key, { name: sym.name, packages: [], pages });
+    groups.get(key).packages.push(sym.package);
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // === llms.txt ===
-const pageUrl = (slug, zh) => `${DOMAIN}${zh ? "/zh" : ""}${slug === "home" ? "/" : `/${slug}`}`;
-let llms = `# ${SITE_NAME}\n\n> ${DESCRIPTIONS.home}\n\nMaintained by ${AUTHOR_NAME} (${OWNER})${ORG_NAME ? `, ${ORG_NAME}` : ""}${TAGLINE ? `, ${TAGLINE}` : ""}. Source: https://github.com/${REPO}\n`;
+const pageUrl = (slug, zh) => `${DOMAIN}${markdownHref(slug, zh)}`;
+let llms = `# ${SITE_NAME}\n\n> ${DESCRIPTIONS.home}\n\nMaintained by ${AUTHOR_NAME} (${OWNER})${ORG_NAME ? `, ${ORG_NAME}` : ""}${TAGLINE ? `, ${TAGLINE}` : ""}. Source: https://github.com/${REPO}\n\nFull text in one file: [English](${DOMAIN}/llms-full.txt)${fullZh.length ? ` · [中文](${DOMAIN}/zh/llms-full.txt)` : ""}\n`;
 for (const group of NAV) {
   const items = group.items.filter(i => fs.existsSync(path.join(PAGES_DIR, `${i.slug}.md`)));
   if (!items.length) continue;
   llms += `\n## ${group.section}\n\n`;
   for (const item of items) {
     llms += `- [${item.label}](${pageUrl(item.slug, false)}): ${DESCRIPTIONS[item.slug] || item.label}\n`;
+  }
+}
+const symbolGroups = symbolIndex();
+if (symbolGroups.length) {
+  const labelOf = slug => NAV.flatMap(g => g.items).find(i => i.slug === slug)?.label || slug;
+  llms += `\n## Symbols\n\nExported symbol -> page that documents it.\n\n`;
+  for (const g of symbolGroups) {
+    const links = g.pages.map(slug => `[${labelOf(slug)}](${pageUrl(slug, false)})`).join(", ");
+    llms += `- \`${g.name}\` (${[...new Set(g.packages)].join(", ")}): ${links}\n`;
   }
 }
 if (zhSlugs.length) {
@@ -556,9 +665,9 @@ if (zhSlugs.length) {
   }
 }
 if (releaseTags.length) {
-  llms += `\n## Optional\n\n- [Release Notes](${DOMAIN}/released/): ${SITE_NAME} changelog by version\n`;
+  llms += `\n## Optional\n\n- [Release Notes](${DOMAIN}/released/index.md): ${SITE_NAME} changelog by version\n`;
 }
 fs.writeFileSync(path.join(__dirname, "public/llms.txt"), llms);
 console.log("OK: llms.txt");
 
-console.log(`\nBuilt ${built} doc pages (${builtZh} zh), ${releaseTags.length} release pages.`);
+console.log(`\nBuilt ${built} doc pages (${builtZh} zh), ${releaseTags.length} release pages. Template ${TEMPLATE_VERSION}.`);

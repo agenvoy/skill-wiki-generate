@@ -52,7 +52,7 @@
 
 **雙檔模式（2026-09-07 補記）：** 落在例外內的專案，2026 主流做法是 `llms.txt`（索引，供定位）＋ `llms-full.txt`（全文，供深度 ingestion），Anthropic、Vercel、LangGraph 皆採此模式。
 
-**規格 v2（2026-10-02 補記）：** llmstxt.org 於 2026-08-10 發布 v2。檔案格式不變（H1 必要；blockquote 摘要、H2 連結清單 `- [name](url): notes`、`Optional` 段皆選用，`Optional` 僅剩慣例意義）。新增：HTML `<link>`／HTTP `Link:` 探索機制——`rel="describedby"` 指向適用的 llms.txt、`rel="alternate" type="text/markdown"` 指向該頁 Markdown 版；子路徑 llms.txt 涵蓋其下頁面且最具體者優先；Markdown 版命名可為 `page.html.md` 或 `page.md`；移除 `llms_txt2ctx` 展開工具，定位為「agent 讀索引後跟隨連結，連結應指向 LLM 友善內容」。以上皆為選用擴充，非搜尋排序訊號。
+**規格 v2（2026-10-02 補記）：** llmstxt.org 於 2026-08-10 發布 v2。檔案格式不變（H1 必要；blockquote 摘要、H2 連結清單 `- [name](url): notes`、`Optional` 段皆選用，`Optional` 僅剩慣例意義）。新增：HTML `<link>`／HTTP `Link:` 探索機制——`rel="describedby"` 指向適用的 llms.txt、`rel="alternate" type="text/markdown"` 指向該頁 Markdown 版；子路徑 llms.txt 涵蓋其下頁面且最具體者優先；Markdown 版命名可為 `page.html.md` 或 `page.md`；移除 `llms_txt2ctx` 展開工具，定位為「agent 讀索引後跟隨連結，連結應指向 LLM 友善內容」。以上皆為規格層機制，非搜尋排序訊號；wiki-generate 範本 1.2.0 起全數內建（R7.3：規格出新版即實作）。
 
 **因此的判斷規則：** 專案是**供 AI agent 取用的開發者文件站**（SDK / CLI / library docs）→ 產生 llms.txt 有實際用途。行銷官網 / 一般內容站 → **不產生**；已存在者列為可移除項。
 
@@ -131,3 +131,52 @@ Princeton / Georgia Tech / IIT Delhi 的 GEO 研究指出，實體密集（entit
 - **第三方提及**：AI 引擎偏好站外佐證高於自家站內宣稱
 
 **注意：** 該研究的可見度提升是相對於未優化基準的實驗結果，不是對任意站點的保證值。引用時須標註為研究結論而非承諾。
+
+---
+
+## A9 — ChatGPT 與 Copilot 的檢索層是 Bing 索引
+
+**立場：** Bing 索引是 ChatGPT search 與 Microsoft Copilot 的檢索基礎（Tier 2：87%+ 的 ChatGPT search 引用與 Bing 前段結果重合）；頁面不在 Bing 索引等同於在這兩個引擎中不存在，與 Google 排名無關。Microsoft 於 2026-02 推出 Bing Webmaster Tools **AI Performance**（public preview），提供 Copilot 與 Bing AI 摘要的引用次數、被引用頁面、grounding queries。官方涵蓋範圍原文為「Microsoft Copilot, AI-generated summaries in Bing, and select partner integrations」，**未點名 ChatGPT**（2026-10-02 重抓確認）；第三方文章稱其涵蓋 ChatGPT 屬推論，不採信。
+
+**Bing 官方建議（Tier 1）：** IndexNow 在內容新增、更新、刪除時主動通知參與的搜尋引擎，讓 AI 回答引用最新版本；另建議清楚的標題與表格結構、以證據支持主張、維持內容新鮮度。
+
+**來源：** Bing Webmaster Blog *Introducing AI Performance in Bing Webmaster Tools Public Preview*（2026-02）。
+
+**因此的判斷規則：** 目標引擎含 ChatGPT（固定預設包含）→ Bing Webmaster Tools 驗證與 sitemap 提交為必要檢查項；有建置／部署流程者建議接 IndexNow。
+
+---
+
+---
+
+## A10 — 日期與新鮮度
+
+**立場（Tier 1）：** Google 建議以 `datePublished` / `dateModified` 標註於 `CreativeWork` 子類型（`Article`、`BlogPosting`、`TechArticle`），並在頁面上可見地顯示「最後更新」日期；日期必須是實際發布或更新日，**禁止未來日期或與內容無關的日期**。
+
+**Tier 2（樣本與方法差異大，每次重新確認）：** 多份 2026 研究指出 AI 引用偏好新內容——約半數被引用內容小於 13 週、Perplexity 對當年度內容偏好約 1.69 倍、Gemini 幾乎無偏好（0.78 倍）、ChatGPT 隨模型版本擺盪。
+
+**因此的判斷規則：** 內容型頁面缺 `dateModified` → 依實際 git 修改時間或建置時間補上。**禁止**在內容未實質變動時改寫日期以製造新鮮度——這屬於操弄，且 Google 已將 spam policies 延伸到 AI 回答（A1）。
+
+---
+
+---
+
+## A12 — AI 讀取／使用控制的標準與提案追蹤
+
+**上次驗證：2026-10-02**（每次由 research_protocol A-5 逐列比對更新）
+
+| 名稱 | 組織 | 機制 | 狀態 | 可實作 |
+|---|---|---|---|---|
+| llms.txt | Answer.AI（llmstxt.org） | `/llms.txt`、每頁 `.md`、`rel="describedby"`／`rel="alternate" type="text/markdown"` | v2，修改日 2026-08-10；無標準組織、IANA 未登錄 | 是（事實慣例，見 A3） |
+| AI Usage Preferences vocab | IETF aipref WG | `train-ai`、`ai-use`、`search`，值 `y`／`n` | draft-ietf-aipref-vocab-08（2026-09-14），WG Document；IESG 里程碑 2026-08-31 已過未送 | 草案；需使用者決定政策 |
+| AI Usage Preferences attach | IETF aipref WG | robots.txt `Content-Usage: [path] <prefs>`；HTTP header `Content-Usage` | draft-ietf-aipref-attach-05（2026-08-19），WG Document | 草案；需使用者決定政策 |
+| Content Signals | Cloudflare | robots.txt `Content-signal: search=yes, ai-input=yes, ai-train=no`（詞彙與 aipref 不同） | 廠商自訂，文件 2026-08-03 | 是；需使用者決定政策 |
+| TDMRep | W3C CG | `/.well-known/tdmrep.json`、header／meta `tdm-reservation`、`tdm-policy` | CG Final Report 2024-05-10；IANA provisional | 是；僅在需表達 EU DSM 第 4 條保留時 |
+| Web Bot Auth | IETF webbotauth WG | bot 端 HTTP Message Signatures；bot 在自身網域發布 `/.well-known/http-message-signatures-directory` | draft-ietf-webbotauth-httpsig-protocol-00（2026-09-01） | 網站端無需動作 |
+| A2A Agent Card | Linux Foundation | `/.well-known/agent-card.json` | IANA permanent，A2A 1.0.0 | 僅限提供 A2A agent 的站 |
+| MCP Server Card | MCP Server Card WG | well-known 路徑未定（SEP-2127 PR Open） | experimental | 否 |
+| WebMCP | W3C Web ML CG | 前端 `document.modelContext.registerTool()` | Draft CG Report 2026-09-30 | 否（需互動工具） |
+| agents.txt、`/.well-known/ai` 等 agent discovery | 個人 I-D | 各自不同 | 皆未被 WG 採納 | 否 |
+
+**廠商支援（官方頁）：** 截至驗證日，Google、OpenAI、Anthropic、Bing 的官方 crawler 頁皆未提及 `Content-Usage`、Content-Signal、TDMRep 或 llms.txt；Cloudflare 自家文件支援 Content Signals。
+
+**判斷規則：** 「可實作」欄為「需使用者決定政策」者，技術上可直接加，但值（是否允許 AI 訓練、AI 輸入、搜尋）是內容授權決策，第一次必須詢問並寫入 config，之後依 config 套用；「否」者只追蹤不實作。

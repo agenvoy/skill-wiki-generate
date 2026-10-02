@@ -89,10 +89,13 @@ python3 {skill_dir}/scripts/setup_config.py write \
 | `primary_keywords` / `secondary_keywords` | title／description 的關鍵字來源 | 由 Step 1 實讀原始碼產出 3–4 個產品關鍵字候選供選擇；使用者可另加品牌詞（人名、帳號、組織名） |
 | `author_name_zh` | ZH 頁 title 尾端的作者名 | `author_name` 中的中文部分；無中文則同 `author_name` |
 | `person_id` / `person_name` / `person_alt_names` | JSON-LD Person 節點 | 先抓 `author_url` 頁面的 JSON-LD：已宣告 Person 就**沿用其 `@id` 與 `name`**（跨站實體歸戶）；沒有則 `@id = {author_url}#person`、`name = author_name` |
-| `same_as` | Person `sameAs` 與署名列外部連結 | `https://github.com/{github_owner}`、`author_url`；只列使用者確認實際存在的個人檔案 |
-| `org_name` | Organization 節點與署名列組織段；**逐字採用使用者寫法**（含標點） | 空字串＝無組織，不產生 Organization |
+| `same_as` | Person `sameAs` 與署名列外部連結 | 作者網站 Person `sameAs` 與 `https://github.com/{github_owner}`、LinkedIn 等個人檔案取聯集；**排除 `author_url` 本身**（已由 `url` 表達）與組織帳號（放 `org_same_as`）；只列確認實際存在的個人檔案 |
+| `org_name` / `org_name_zh` | Organization 節點與署名列組織段，EN／ZH 頁各用自己語言的正式名稱（另一語言進 `alternateName`）；**逐字採用使用者寫法**（含標點） | 空字串＝無組織，不產生 Organization |
+| `org_same_as` | Organization `sameAs`（如組織的 GitHub org） | 空陣列 |
+| `tagline` | 署名列與 llms.txt 的定位文字（如 `Taiwan · Infrastructure Engineering`），不產生任何 schema 實體 | 空字串＝不輸出 |
 | `og_image` | 全站 `og:image`／`twitter:image` | 候選：`author_url` 網站的 logo、`https://github.com/{github_owner}.png`；**必須 `curl -sIL` 驗證 200 且為 image/***，否則留空 |
 | `has_physical_location` | 是否需 LocalBusiness | 文件站固定 `false`，不詢問 |
+| `ai_train` / `ai_input` / `ai_search` | R13 AI 使用偏好：`y`／`n`／空字串（不表態）；分別對應 aipref `train-ai`／`ai-use`／`search` 與 Content Signals `ai-train`／`ai-input`／`search` | 必須詢問使用者，不得代填 |
 
 `locales`（依實際語言版本）、`locale_policy: per-language-full`、`engines: [google, google-ai, chatgpt, perplexity, claude]` 為固定值，直接寫入，不詢問。
 
@@ -166,6 +169,30 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
 | `extensions/skills/*/SKILL.md` | Skill 系統頁面所需 |
 | `makefile` / `package.json` / `pyproject.toml` | CLI 指令清單 |
 | `.env.example` | 環境變數清單 |
+
+### Step 1.4：API 覆蓋率與移除紀錄（強制，每次生成）
+
+目標：程式碼現有的每個公開符號都寫在文件裡，文件裡的每個符號都還存在於程式碼；已移除的符號保留在文件中並標出移除版本。
+
+```bash
+git -C <project_root> fetch --tags --force
+python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <project_root>/wiki-worker/public/docs/symbols.json
+```
+
+`--write-symbols` 同時輸出公開符號清單（不含 method），`build.js` 據此在 `llms.txt` 產生 `## Symbols` 索引；`symbols.json` 是生成產物，不手改。
+
+| 輸出欄位 | 意義 | 動作 |
+|---|---|---|
+| `missing` | 程式碼有、文件沒寫的公開符號（Go 以 `go doc -all` 取得，含 const／var／func／type／method） | 先完整讀實作，再寫進對應主題頁；沒有合適的頁就依 Step 2「頁面主軸」新開頁。補的是**功能說明**（行為、各供應商差異、邊界），不只是把符號名列進表格 |
+| `removed` | 文件提到、程式碼已不存在的識別字，附 `removed_in`（含移除 commit 的第一個 tag） | 不刪除：從原頁移到「已移除 API」頁，標 `Removed in vX.Y.Z`／`移除於 vX.Y.Z`；`note: never existed in git history` 代表文件寫錯（縮寫、佔位名），改成實際完整符號名 |
+| `undocumented_removals` | 沿 tag 逐版比對找出的歷史移除符號，文件中尚無移除紀錄 | 寫進「已移除 API」頁：符號、套件、`Removed in`、最後存在版本、替代做法。替代做法從 `public/docs/tags/<removed_in>.md` 或移除 commit 的 diff 取得，查不到就寫「無公開替代」 |
+| `removed_in: unreleased (after vX)` | 移除尚未發版 | 寫 `Removed after vX (unreleased)`；下次生成時腳本會回報實際版號，屆時改正 |
+
+腳本 exit 0 才算完成。英中兩版同步，移除標記兩邊都要寫（`Removed in`／`移除於` 是腳本辨識移除紀錄的關鍵字，不得改寫）。
+
+**為何：** 文件是讀者學會整個 API 的唯一入口。新功能沒寫＝讀者不知道它存在；移除的功能直接刪掉＝升級中的讀者找不到「這個符號去哪了、從哪一版開始」。只靠人工比對會漏：go-llm-router 2026-10-02 的 `WithSessionID`／`SessionUUID`、`core/xai`，以及 v0.3.0 移除的 11 個 reasoning 函式，全部是腳本找出來的。
+
+`--only` 模式：仍執行並回報；只修改 `--only` 指定的頁面，其餘缺漏列在回應中。
 
 ---
 
@@ -256,14 +283,22 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
 <project_root>/wiki-worker/
 ├── build.js                              (md → html 編譯腳本；首次生成時從 skill 範本複製並客製化)
 ├── sync-tags.js                          (GitHub Releases → docs/tags/*.md；首次生成時從 skill 範本複製並客製化)
+├── indexnow.js                           (部署後送出內容有變的 URL 至 IndexNow；從 skill 範本複製，不客製)
+├── .indexnow-sent.json                   (indexnow.js 產出：每個 URL 已送出的 lastmod)
 ├── package.json                          (`{repo}-wiki`；首次生成時從 skill 範本複製)
 ├── wrangler.toml                         (`{repo}-wiki`；Cloudflare Workers 部署設定；首次生成時從 skill 範本複製)
 └── public/
     ├── docs.css                          (文件站樣式；**每次生成都從 skill 範本整檔覆蓋**，不手動維護)
     ├── sitemap.xml                       (build.js 產出，勿手動編輯)
     ├── robots.txt                        (build.js 產出，勿手動編輯)
+    ├── _headers                          (build.js 產出：`.md`／`*.txt` 的 `charset=utf-8`，勿手動編輯)
+    ├── llms.txt                          (build.js 產出：頁面索引＋`## Symbols` 符號索引)
+    ├── llms-full.txt                     (build.js 產出：EN 全文；ZH 版在 zh/llms-full.txt)
+    ├── {indexnow-key}.txt                (indexnow.js --ensure-key 產出的 IndexNow key 檔)
     ├── assets/                           (README 引用的本地圖片原樣複製於此，如 logo.svg、logo.png)
     ├── docs/
+    │   ├── symbols.json                  (check_coverage.py --write-symbols 產出，勿手動編輯)
+    │   ├── dates.json                    (build.js 產出：每頁內容雜湊與 published／modified 日期；必須保留，刪除會讓所有日期重置)
     │   ├── pages/                        (markdown 原始檔，唯一手動編輯的來源)
     │   │   ├── home.md                   (EN)
     │   │   ├── getting-started.md        (EN)
@@ -305,6 +340,7 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
    cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs.css
    cp {skill_dir}/scripts/templates/package.json <project_root>/wiki-worker/package.json
    cp {skill_dir}/scripts/templates/wrangler.toml <project_root>/wiki-worker/wrangler.toml
+   cp {skill_dir}/scripts/templates/indexnow.js <project_root>/wiki-worker/indexnow.js
    ```
 2. 先讀取 `build.js`，確認下列 placeholder 仍存在；**僅替換存在且值不同的 placeholder**，改為實際值（Step 0.3 收集的欄位）。目標值已正確時不寫入：
 
@@ -320,10 +356,12 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
    | `{{PERSON_ID}}` / `{{PERSON_NAME}}` | Step 0.3 `person_id` / `person_name` |
    | `// {{PERSON_ALT_NAMES}}` | Step 0.3 `person_alt_names`，展開為字串陣列元素（可含 `github_owner`） |
    | `// {{SAME_AS}}` | Step 0.3 `same_as`，展開為字串陣列元素 |
-   | `{{ORG_NAME}}` | Step 0.3 `org_name`（空字串＝無組織） |
+   | `{{ORG_NAME}}` / `{{ORG_NAME_ZH}}` | Step 0.3 `org_name` / `org_name_zh`（空字串＝無組織） |
+   | `// {{ORG_SAME_AS}}` | Step 0.3 `org_same_as`，展開為字串陣列元素 |
    | `{{TAGLINE}}` | Step 0.3 `tagline`（署名列與 llms.txt 的定位文字，如 `Taiwan · Infrastructure Engineering`；空字串＝不輸出。**不**產生 Organization 節點——定位描述不是註冊實體） |
 | `{{ORG_ID}}` / `{{ORG_URL}}` | 有組織時：`{author_url 網站根}#organization` / 組織網站（無則 `author_url`）；無組織時留空字串 |
    | `{{OG_IMAGE}}` | Step 0.3 `og_image`（已驗證；空字串＝不輸出圖片 meta） |
+   | `{{AI_TRAIN}}` / `{{AI_INPUT}}` / `{{AI_SEARCH}}` | Step 0.3 `ai_train` / `ai_input` / `ai_search` |
    | `{{HOME_TITLE}}` / `{{HOME_TITLE_ZH}}` | Step 8.2 R1 規則產出的首頁 title（EN / ZH 各自撰寫） |
    | `{{PROGRAMMING_LANGUAGE}}` | 主要語言（`go.mod` → `Go`、`package.json` → `JavaScript`／`TypeScript`、`pyproject.toml` → `Python`） |
    | `{{LICENSE_URL}}` | `LICENSE` 第一行對應 SPDX 授權網址（`MIT License` → `https://opensource.org/licenses/MIT`）；無 LICENSE 留空 |
@@ -334,7 +372,20 @@ python3 {skill_dir}/scripts/analyze_project.py /path/to/project
 4. 將 `package.json` 與 `wrangler.toml` 內的 `{{REPO_NAME}}` 替換為 repo 名稱（lowercase，取 `{repo}` 的部分，不含 owner），使兩者 `name` 欄位皆為 `{repo}-wiki`
 5. 提示使用者於 `wiki-worker/` 下執行 `npm install`（安裝 `marked` 與 `wrangler`）
 
-若 `wiki-worker/build.js` 已存在（非首次生成）：**只更新 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `NAV_ZH_*` 物件以反映新增或修改的頁面**，其餘邏輯、`sync-tags.js`、`package.json`、`wrangler.toml` 不動。例外：既有 `build.js` 找不到 `revealNav` → 從範本移植該函式與手機選單按鈕的呼叫（見下方「側欄行為」），其餘不動。
+若 `wiki-worker/build.js` 已存在（非首次生成）：**每次都對齊最新範本**，不詢問使用者。
+
+| 比對 | 動作 |
+|---|---|
+| 專案 `build.js` 的 `TEMPLATE_VERSION` 等於 `scripts/templates/build.js` | 只更新 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`NAV_ZH_*` 物件 |
+| 低於範本，或找不到 `TEMPLATE_VERSION`（1.2.0 前的範本） | 重新複製 `build.js` 與 `sync-tags.js` 範本，依 Step 3.1 第 2 步重新填值，再放回既有的 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`NAV_ZH_*` 頁面資料 |
+
+`package.json` 的 `scripts` 也對齊範本（範本新增的流程如 IndexNow 串在 `deploy` 中），`name` 與相依版本不動；範本新增的腳本檔（如 `indexnow.js`）一併複製。
+
+重新填值的來源：既有 `build.js` 的站台常數值 → `wiki-worker/.doc/seo/config.json` → Step 0.3 預設 fallback。新範本新增、但兩處都沒有值的欄位（如舊站沒有 `tagline`）填預設值，並在回應中列出。`package.json`、`wrangler.toml` 不動。
+
+回應中列出 `scripts/templates/CHANGELOG.md` 介於兩版之間的各節（新增／變更／移除），讓使用者知道這次站台多了什麼、少了什麼。
+
+**為何：** 範本是同一份設計在所有專案的單一來源；逐項「找不到某字樣就移植某函式」的例外條款只擋得住當初寫進 SKILL.md 的那一項，其餘改動會靜默漏掉。歷史事故（go-llm-router 2026-10-02）：專案 `build.js` 停在 `TAGLINE` 與 `revealNav` 之前的版本，例外條款只移植了 `revealNav`，`TAGLINE` 一直沒進來。
 
 ### 側欄行為（範本內建）
 
@@ -352,7 +403,16 @@ cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs
 
 **為何整檔覆蓋而非逐條補：** `docs.css` 與 `build.js` 是同一份設計的兩半——build.js 每新增一個 class（`nav-date`／`header-version`／`content .byline`／`pre.mermaid`），樣式就住在範本 css 裡。逐條檢查「有沒有某個字樣」只能擋住當初寫進 SKILL.md 的那一條，其餘新 class 會靜默沒有樣式：**HTML 完全合法、build 不報錯、SEO 檢查全過，只有人眼看得出版面壞掉**。歷史事故（go-bot 2026-09-20）：舊 css 缺 `.nav-date`／`.header-version`／`.content .byline` 三條，版本側欄的日期因為沒有 `float:right` 直接黏在 tag 後面渲染成 `v0.5.02026-09-20`，署名列也沒有分隔線；當時 SKILL.md 只要求檢查 `pre.mermaid`，所以三條全部漏掉。css 是生成資產，與 `public/*.html` 同級，專案端沒有客製它的正當理由。
 
-例外：既有 `build.js` 找不到 `PERSON_ID`、`OG_IMAGE`、`llms.txt` 任一字樣 → 代表是 SEO 內建前的舊範本。向使用者說明缺少的 Step 8 項目，取得同意後改依首次生成流程重新複製範本並填值（只保留既有 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`NAV_ZH_*` 的頁面資料，其餘版面與 meta 邏輯一律以新範本為準），不得靜默沿用舊範本略過 SEO。**不要保留舊範本的版面客製**——舊站看起來對的地方，可能只是新範本已改過的設計的舊版；例如 header logo 在範本是 `${REPO}`（`owner/repo`），沿用舊值會變成只有產品名。
+對齊範本時**不保留舊範本的版面客製**——舊站看起來對的地方，可能只是新範本已改過的設計的舊版；例如 header logo 在範本是 `${REPO}`（`owner/repo`），沿用舊值會變成只有產品名。
+
+### Step 3.1.1：範本版號與 CHANGELOG
+
+修改 `scripts/templates/` 下任何檔案（`build.js`／`docs.css`／`sync-tags.js`）時，同一次改動內：
+
+1. 升 `build.js` 的 `TEMPLATE_VERSION`（新增功能 minor、修正 patch、移除或破壞相容 major）
+2. 在 `scripts/templates/CHANGELOG.md` 新增一節，分 `Added`／`Changed`／`Removed`；移除的行為必須寫進 `Removed` 並註明原本存在的版本範圍，舊節不刪
+
+**為何：** 版號是 Step 3.1 判斷專案是否落後的唯一依據；CHANGELOG 是使用者得知「站台這次多了什麼、拿掉什麼」的唯一來源。
 
 ### Step 3.2：同步版本紀錄（GitHub Releases）
 
@@ -475,11 +535,15 @@ cd <project_root>/wiki-worker && node build.js
 
 | 模式 | 行為 |
 |---|---|
-| 完整生成（無 `--only`） | 依 research_protocol 跑 **Phase A**（八組查詢並行＋實際抓取兩個 Tier 1 來源）與 **Phase B**（每個關鍵字、每個語言各搜一次；`llms.txt agent-facing` 查詢），digest 寫入 `wiki-worker/.doc/seo/research-{yyyy-MM-dd}.md`；結果與 knowledge_anchors 不符時就地更新 anchors 與其驗證日期 |
+| 完整生成（無 `--only`） | 依 research_protocol 跑 **Phase A**（十一組查詢並行＋實際抓取五個 Tier 1 來源＋A-5 標準與提案追蹤，與 anchors A12 逐列比對）與 **Phase B**（每個關鍵字、每個語言各搜一次；`llms.txt agent-facing` 查詢），digest 寫入 `wiki-worker/.doc/seo/research-{yyyy-MM-dd}.md`；結果與 knowledge_anchors 不符時就地更新 anchors 與其驗證日期 |
 | `--only` | 不重跑研究，沿用最新 digest；仍執行 Step 8.4 驗證 |
 | 網路不可用 | 明確告知「本次未取得最新研究，依 {anchors 驗證日期} 快照」，不得靜默沿用 |
 
-研究結論若推翻範本內建行為（例：官方重新支援某 schema、某 bot token 改名），先改專案 `build.js`，再依「禁止行為」最後一條回饋進 `scripts/templates/build.js`。
+研究發現新規格、新格式或推翻範本內建行為（例：llms.txt 出新版、官方重新支援某 schema、某 bot token 改名）→ **直接改 `scripts/templates/build.js`**，依 Step 3.1.1 升版並寫 CHANGELOG，再由 Step 3.1 的版號比對同步到專案。不列為「選用、由使用者決定」，也不只改單一專案。
+
+需要內容授權決策的新機制（如 R13 的 AI 使用偏好）例外：範本實作輸出邏輯，值由 config 提供；config 沒有值時詢問使用者一次並寫入。
+
+**為何：** 規格更新是事實，不是偏好；留給使用者決定只會讓每個專案停在舊格式。歷史事故（go-llm-router 2026-10-02）：研究已查到 llms.txt v2，卻被報告成「選用擴充，要不要做請使用者決定」，範本沒有更新。
 
 ### Step 8.2：規則 → 本 skill 的產出位置
 
@@ -491,11 +555,15 @@ cd <project_root>/wiki-worker && node build.js
 | R4 OG／Twitter | 範本內建 | 首頁 `og:type website`、其餘 `article`；`twitter:card summary`；`OG_IMAGE` 為空則不輸出圖片 meta，並在報告列「需提供 OG 圖」 |
 | R5 標題階層 | 主題頁 md 以 `# ` 開頭；首頁與版本頁由 `ensureH1()` 補 | 每頁恰一個 h1；主內容在 `<main>`、導覽在 `<nav>` |
 | R6 JSON-LD | 範本內建 `@graph` | Person（沿用作者網站 `@id`）＋ Organization（有 `ORG_NAME` 才有）＋ WebSite ＋ 首頁 `SoftwareSourceCode`／其餘 `TechArticle`；不得加頁面上不存在的 FAQ／評分 |
+| R6 日期（A10） | 範本內建 `stampDates()`＋`public/docs/dates.json` | 每頁 `datePublished`／`dateModified` 由內容 SHA-256 判斷：雜湊變了才更新 `modified`，署名列可見顯示同一日期，sitemap `lastmod` 取同一值；版本頁用 release 日期。**不得**改用檔案 mtime 或建置時間（重新產生檔案就會變動，屬操弄新鮮度） |
+| R6／R10 Organization | `ORG_NAME`／`ORG_NAME_ZH`／`ORG_SAME_AS` | 只填實際存在的組織（公司登記名、有網站或 GitHub org）；地區、職能等定位文字一律放 `TAGLINE`，不得成為 Organization。EN／ZH 頁各用該語言的正式名稱。作者網站已宣告 Organization 時沿用其 `@id` 與名稱 |
+| R12 索引提交 | 範本內建 `indexnow.js`＋`npm run deploy` | 部署前 `--ensure-key` 產生 key 檔一起上線，部署後只送 `lastmod` 與上次不同的 URL（HTTP 200／202 為成功）。首次生成時先徵得使用者同意才接進 deploy。GSC／BWT 驗證狀態詢問使用者，未驗證列人工後續 |
 | R7.1 robots.txt | 範本內建 | `User-agent: *` / `Allow: /` ＋ `Sitemap:`；不封鎖任何檢索型 bot |
 | R7.2 sitemap | 範本內建 | 含所有 EN／ZH／版本頁與 `lastmod` |
-| R7.3 llms.txt | 範本內建（由 NAV／DESCRIPTIONS 產生） | 文件站屬 agent-facing 開發文件例外，一律產生；不宣稱提升排名 |
+| R7.3 llms.txt | 範本內建（由 NAV／DESCRIPTIONS 產生） | 文件站屬 agent-facing 開發文件例外，一律產生；依規格最新版（目前 v2）輸出每頁 Markdown 版、`rel="alternate" type="text/markdown"`、`rel="describedby"`，llms.txt 連結指向 Markdown 版；另產 `## Symbols` 符號索引、`llms-full.txt`（EN／ZH），署名列放可見的 `llms.txt` 與本頁 Markdown 連結；不宣稱提升排名 |
 | R10 實體一致性 | 範本內建可見署名列 `<footer class="byline">` ＋ JSON-LD | 作者名、帳號、組織名在署名列、JSON-LD、llms.txt、作者網站寫法完全一致 |
-| R8／R9 | 只回報 | 套件登錄頁 metadata、`gh repo edit` 指令、README 首段建議寫進報告，**不執行** |
+| R13 AI 使用偏好 | 範本內建（robots.txt `Content-Usage`／`Content-signal`、`_headers` `/*` 的 `Content-Usage`） | 值全為空時不輸出；語法依 anchors A12 最新狀態，A-5 查到變動時改範本並升版 |
+| R8／R9 | 只回報 | 套件登錄頁 metadata（Go：缺 `// Package` doc comment 時提供建議文字，由使用者撰寫）、`gh repo edit` 指令、README 首段建議寫進報告，**不執行** |
 
 ### Step 8.3：品牌關鍵字的放置
 
@@ -515,11 +583,25 @@ python3 {skill_dir}/scripts/seo/analyze_seo.py <project_root>/wiki-worker
 |---|---|
 | h1 | 每頁恰 1 個 |
 | JSON-LD | 可解析，含 Person／WebSite（有組織時含 Organization），首頁為 `SoftwareSourceCode` |
+| 日期 | 每個文件頁 JSON-LD 有 `datePublished`／`dateModified`，署名列有相同日期的 `<time>`；連續編譯兩次 `dates.json` 不變 |
+| 實體 | Organization `name` 為真實組織且 EN／ZH 各用自身語言；Person `sameAs` 不含 `author_url`；與作者網站 JSON-LD 比對差異列入報告 |
+| IndexNow | 部署後 `{key}.txt` 回 200，`indexnow.js` 回 HTTP 200／202；再跑一次顯示 `no changed URLs` |
 | 署名列 | 每頁有 `class="byline"` |
 | Twitter／OG | 每頁有 `twitter:card`；`OG_IMAGE` 非空時有 `og:image` |
 | hreflang／lang | 無 `x-default`；ZH 頁 `lang="zh-Hant-TW"` |
 | title／description 長度 | 符合 Step 8.2 R1／R2 上限；description 無重複 |
-| llms.txt | 其中 URL 集合與實際 HTML 頁面（版本單頁除外）差集皆為空 |
+| LLM 定位 | 每頁署名列有 `llms.txt` 與本頁 Markdown 連結；`llms.txt` 有 `## Symbols` 且條目數 > 0；`llms-full.txt`（有 ZH 頁時含 `zh/llms-full.txt`）存在且每段有 `Source:` |
+| 文字檔編碼 | 部署後 `curl -sI {domain}/llms.txt`、`/llms-full.txt` 與任一 `.md`（含 `/zh/`）的 `Content-Type` 帶 `charset=utf-8`；不帶就是 `_headers` 沒生效，中文會以 Latin-1 顯示成亂碼 |
+| llms.txt | 其中 URL 集合與實際 `.md` 鏡像（版本單頁除外）差集皆為空；每頁 `<head>` 有 `rel="describedby"` 與 `rel="alternate" type="text/markdown"`，且後者指向的 `.md` 檔存在 |
+
+**新規範回報（強制）：** 本次研究（含 A-5 標準追蹤）查到的內容只要**新於或高於 skill 現有資訊**——knowledge_anchors、optimization_rules、範本行為任一處沒有記載、記載過時或被推翻——回應的**最後一段**必須是「本次發現的新規範」表：
+
+| 規範 | 來源 URL（日期） | skill 原本 | 最新內容 | 本次處理 |
+|---|---|---|---|---|
+
+「本次處理」寫實際改了哪個檔案（anchors／rules／範本與版號），或未處理的原因（例：仍為個人 draft、需使用者決定政策）。沒有新規範時寫一行「本次研究未發現高於 skill 現有資訊的新規範」。
+
+**為何：** 規範更新散在 digest 與 anchors 的修改裡，使用者不會逐檔比對；不在回應最後明列，就不知道 skill 這次被哪些新事實改寫、哪些還沒跟上。
 
 結果依 output_format 寫入 `wiki-worker/.doc/seo/{yyyy-MM-dd_HH-mm}-applied.md`（已套用／未套用／需人工後續／驗證方式），並提醒使用者確認 `.doc/` 是否需加入 `.gitignore`。
 
@@ -531,6 +613,9 @@ python3 {skill_dir}/scripts/seo/analyze_seo.py <project_root>/wiki-worker
 
 ### 結構
 - [ ] `wiki-worker/build.js` 存在且無殘留 `{{PLACEHOLDER}}` 或 `// {{NAV}}` 等佔位註解
+- [ ] 專案 `build.js` 的 `TEMPLATE_VERSION` 與 `scripts/templates/build.js` 相同
+- [ ] 本次若改過 `scripts/templates/`：`TEMPLATE_VERSION` 已升版，`CHANGELOG.md` 已新增對應一節
+- [ ] `check_coverage.py` exit 0（`missing`／`removed`／`undocumented_removals` 皆為空）
 - [ ] `wiki-worker/public/docs.css` 與 `scripts/templates/docs.css` 逐字相同（`diff` 無輸出）
 - [ ] build.js 輸出的每個自有 class 在 docs.css 都找得到規則（外部來源的 `fa-*`（Font Awesome）、`language-*`（marked 產生的 code fence）除外）：
 
@@ -584,6 +669,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 
 ```
 0. 作者設定 → setup_config.py check；首次生成額外詢問 site_name / domain / gtag_id 與 SEO 設定（寫入 wiki-worker/.doc/seo/config.json）
+0.5 覆蓋率 → git fetch --tags；check_coverage.py 找出缺漏與已移除符號（Step 1.4）
 1. 解析參數 → REPO_PATH / ONLY / PAGES
 2. 粗掃專案 → analyze_project.py（取符號索引）
 3. 讀完整檔 → 對每頁必讀的原始碼檔逐檔完整讀取（不只看 analyzer 摘要）
@@ -596,7 +682,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 10. 同步版本 → node wiki-worker/sync-tags.js（`--only` 模式跳過）
 11. 編譯 → node wiki-worker/build.js；檢查 stdout 無 SKIP
 12. SEO 驗證 → analyze_seo.py ＋ Step 8.4 逐頁檢查，寫 applied 報告
-13. 驗證 → 跑檢查清單；連結 / 對向檔案存在性 + 引用的 symbol 確實存在
+13. 驗證 → 跑檢查清單；連結 / 對向檔案存在性 + 引用的 symbol 確實存在；check_coverage.py exit 0
 ```
 
 ---
@@ -627,3 +713,12 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 | `OG_IMAGE` 填未驗證或捏造的圖片網址 | 分享卡顯示破圖；找不到真實圖檔就留空並列入待辦 |
 | 自行新造 Person `@id`，而作者網站已宣告過 | 同一人被拆成兩個實體，無法跨站歸戶 |
 | 輸出偏向單一語言的 `x-default` | 語言等權為固定政策 |
+| 把定位文字（地區、職能、口號）填進 `org_name` | 產生不存在的 Organization 實體並掛作者為 founder，污染實體圖；歷史事故（go-llm-router 2026-10-02）：「Taiwan · Infrastructure Engineering」被宣告成組織 |
+| 以檔案 mtime 或建置時間當 `dateModified` | 檔案重新產生就會變動，內容沒改日期卻更新，屬操弄新鮮度（A10） |
+| 刪除或手改 `public/docs/dates.json` | 所有頁面的發布日期會重置成重建當天 |
+| IndexNow 每次部署送出全部 URL | 只送有變動的 URL；重複送出未變更頁面違反 IndexNow 使用方式 |
+| 程式碼已有的公開功能沒寫進文件 | 讀者不知道功能存在；文件的價值是完整 |
+| 從文件刪除已移除的 API，或移除紀錄不寫版本號 | 升級中的讀者需要知道符號去哪了、從哪一版開始；`Removed in` 是 `check_coverage.py` 辨識移除紀錄的關鍵字 |
+| 非首次生成時沿用舊版範本、只挑部分函式移植 | 逐項移植會靜默漏掉其他改動；一律依 `TEMPLATE_VERSION` 整份對齊 |
+| 研究查到規格新版卻列為「選用、交由使用者決定」 | 規格更新直接進範本並升版，再同步到專案 |
+| 改範本卻沒升 `TEMPLATE_VERSION`／沒寫 CHANGELOG | 專案端無法偵測落後，使用者也無從得知變更內容 |
