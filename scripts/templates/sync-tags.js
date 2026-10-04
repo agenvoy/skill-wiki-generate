@@ -13,6 +13,7 @@ function fetch(url) {
     // GITHUB_TOKEN lifts the 60 req/h anonymous rate limit and is required for private repos
     if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
     https.get(url, { headers }, res => {
+      res.setEncoding("utf8");
       let body = "";
       res.on("data", c => body += c);
       res.on("end", () => {

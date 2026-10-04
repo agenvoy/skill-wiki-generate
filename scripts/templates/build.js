@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { marked } = require("marked");
 
-const TEMPLATE_VERSION = "1.14.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "1.14.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
