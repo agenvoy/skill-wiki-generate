@@ -110,7 +110,7 @@
 - **不得**以「提升 AI 引用」為理由加 schema——官方已否定該因果（A2）。理由寫「rich results 資格」或「實體理解」
 - 既有標註正確 → 不動
 
-**Organization 判準**：只為**實際存在**的組織產生 `Organization` 節點——公司登記名稱、有官網或 GitHub org 可對應者。地區、職能、口號等定位文字（例：「Taiwan · Infrastructure Engineering」）不是組織，放可見署名或 tagline，不得成為 `Organization` 並把作者掛為 `founder`。多語站各語言頁用該語言的正式名稱（中文頁「帕登國際有限公司」、英文頁「Pardn Co., Ltd」），另一語言放 `alternateName`，`@id` 共用。作者網站已宣告 Organization 時沿用其 `@id`。（歷史事故：go-llm-router 2026-10-02 文件站把定位文字宣告為組織，作者網站上沒有對應節點。）
+**Organization 判準**：只為**實際存在**的組織產生 `Organization` 節點——公司登記名稱、有官網或 GitHub org 可對應者。地區、職能、口號等定位文字（例：「Taiwan · Infrastructure Engineering」）不是組織，放可見署名或 tagline，不得成為 `Organization` 並把作者掛為 `founder`。多語站各語言頁用該語言的正式名稱（中文頁「帕登國際有限公司」、英文頁「Pardn Co., LTD」），另一語言放 `alternateName`，`@id` 共用。作者網站已宣告 Organization 時沿用其 `@id`。（歷史事故：go-llm-router 2026-10-02 文件站把定位文字宣告為組織，作者網站上沒有對應節點。）
 
 **日期（A10）**：`Article` / `BlogPosting` / `TechArticle` 須帶 `datePublished`，內容曾更新者帶 `dateModified`（`jsonld_date_modified == false` 即觸發），值取自 git 修改時間或**內容雜湊有變動時**的建置日期，並在頁面上可見顯示同一日期。有建置流程者由建置階段寫入：保存每頁內容雜湊與 `published`／`modified`，雜湊改變才更新 `modified`；sitemap `lastmod` 取同一值。**不得**直接用檔案 mtime 或每次建置的日期——重新產生檔案就會變動，等同內容未變卻更新日期。**禁止**內容未變動時更新日期。
 
@@ -199,7 +199,7 @@
 
 **動作**：統一為單一正式寫法，其餘位置對齊。
 
-**Person／Organization 節點的 `sameAs`**：與作者網站的同一 `@id` 節點比對，取聯集讓兩站一致；`sameAs` 不放節點自己的 `url`；個人帳號放 Person、組織帳號（GitHub org）放 Organization，不混放。站外網站（作者個人網站、LinkedIn）的對應修改列入「需人工後續」。
+**Person／Organization 節點的 `sameAs`**：Person `sameAs` 以 `~/.skill-readme-generate.json` 的 `same_as` 為必含清單（使用者 2026-10-02 指定：`https://pardn.io/`、`https://www.linkedin.com/in/pardnchiu`、`https://github.com/pardnchiu`、`https://dev.to/pardnchiu`、`https://x.com/pardnio`），每個站台全數放入、不得刪減，作者網站本身也在內；再與作者網站同一 `@id` 節點比對，差異列入人工後續。個人帳號放 Person、組織帳號（GitHub org）放 Organization，不混放。站外網站（作者個人網站、LinkedIn）的對應修改列入「需人工後續」。
 
 **為何**：實體一致是 Tier 2 研究中少數反覆被證實有效的做法（A8）；名稱漂移會讓引擎無法把散落的提及歸戶到同一實體。
 
@@ -237,7 +237,7 @@
 **動作**：
 - 第一次執行時詢問使用者政策：是否允許 AI 訓練（`train-ai`／`ai-train`）、AI 即時輸入（`ai-input`／`ai-use`）、搜尋（`search`），寫入 config（`ai_usage`）；之後依 config 套用，不再詢問
 - 依 A12 當下可實作的機制同時輸出，並存不衝突：
-  - IETF aipref：robots.txt `Content-Usage: train-ai=y|n, search=y|n`；HTTP header `Content-Usage`（靜態站用 `_headers` 的 `/*` 規則）
+  - IETF aipref：robots.txt `Content-Usage: train-ai=y|n, ai-use=y|n, search=y|n`；HTTP header `Content-Usage`（靜態站用 `_headers` 的 `/*` 規則）
   - Cloudflare Content Signals：robots.txt `Content-signal: search=yes|no, ai-input=yes|no, ai-train=yes|no`
   - TDMRep：僅在使用者要表達 EU DSM 第 4 條保留時輸出 `/.well-known/tdmrep.json`
 - 有建置流程者由建置產生，不手寫靜態檔
@@ -247,6 +247,21 @@
 - aipref 仍為 draft（A12），語法以 A-5 最新抓取為準；狀態變動時依 research_protocol A-5 判讀規則修正
 - 不得宣稱這些宣告會提升排名或 AI 引用；它們只表達使用偏好，主要廠商官方頁截至 A12 驗證日皆未宣告支援
 - 只追蹤不實作 A12 中「可實作＝否」或「網站端無需動作」的項目（Web Bot Auth、MCP Server Card、WebMCP、個人 draft）
+
+---
+
+## R14 — Favicon
+
+**判準**：`web_surfaces` 非空，且頁面無 `<link rel="icon">`、`/favicon.ico` 亦不存在；或 favicon 非 1:1、小於 48x48，或僅提供 SVG。
+
+**動作**：以作者／專案既有的 1:1 圖（先 `curl -sIL` 驗證 200 且為 image/*）轉成 PNG（建議 48 的倍數，如 192x192）放站台根目錄，每頁 `<head>` 加 `<link rel="icon" href="/favicon.png">`；有建置流程者由建置模板輸出。
+
+**依據**：knowledge_anchors A2 favicon 支援格式（`developers.google.com/search/docs/appearance/favicon-in-search`，Last updated 2026-08-28：BMP、GIF、ICO、PNG、JPEG、PPM、TIFF，未列 SVG；1:1、至少 8x8，建議大於 48x48；每個 hostname 一個）。使用者 2026-10-03 指定納入規則。
+
+**邊界**：
+- 找不到可驗證的 1:1 圖 → 不得填造路徑，列為「需提供 favicon」待辦
+- favicon 影響搜尋結果的站台圖示顯示，不是排序訊號，不得宣稱提升排名
+- 子路徑站台（同 hostname 下多站）共用同一 favicon，不在子路徑另設
 
 ---
 

@@ -85,7 +85,7 @@ METADATA_API_PATTERNS = {
 TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.DOTALL | re.IGNORECASE)
 META_RE = re.compile(r"<meta\s+([^>]*?)/?>", re.IGNORECASE)
 LINK_RE = re.compile(r"<link\s+([^>]*?)/?>", re.IGNORECASE)
-ATTR_RE = re.compile(r"""([\w:.\-]+)\s*=\s*["']([^"']*)["']""")
+ATTR_RE = re.compile(r"""([\w:.\-]+)\s*=\s*(["'])(.*?)\2""", re.DOTALL)
 JSONLD_RE = re.compile(
     r"""<script[^>]*type=["']application/ld\+json["'][^>]*>(.*?)</script>""",
     re.DOTALL | re.IGNORECASE,
@@ -194,7 +194,7 @@ def _read(path: Path) -> str | None:
 
 
 def _attrs(fragment: str) -> dict:
-    return {k.lower(): v for k, v in ATTR_RE.findall(fragment)}
+    return {k.lower(): v for k, _, v in ATTR_RE.findall(fragment)}
 
 
 def _strip_tags(html: str) -> str:

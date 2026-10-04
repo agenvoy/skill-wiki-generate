@@ -43,6 +43,10 @@ code,.mono{font-family:"JetBrains Mono",monospace}
 .content pre{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px;overflow-x:auto;margin-bottom:16px}
 .content pre code{background:none;padding:0;color:#e2e8f0;font-size:13px;line-height:1.6}
 .content pre.mermaid{background:var(--bg);border:1px solid var(--border);text-align:center;color:var(--text)}
+.content .demo{margin-bottom:16px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.content .demo>pre{margin:0;border:0;border-radius:0}
+.content .demo-bar{padding:6px 12px;font-size:12px;font-weight:500;color:var(--muted);background:var(--bg-alt);border-bottom:1px solid var(--border)}
+.content .demo iframe{display:block;width:100%;height:64px;border:0;background:#fff}
 .content table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px}
 .content th,.content td{padding:8px 12px;text-align:left;border:1px solid var(--border)}
 .content th{background:var(--surface);font-weight:600;font-size:13px}

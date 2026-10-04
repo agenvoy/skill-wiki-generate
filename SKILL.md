@@ -89,12 +89,15 @@ python3 {skill_dir}/scripts/setup_config.py write \
 | `primary_keywords` / `secondary_keywords` | title／description 的關鍵字來源 | 由 Step 1 實讀原始碼產出 3–4 個產品關鍵字候選供選擇；使用者可另加品牌詞（人名、帳號、組織名） |
 | `author_name_zh` | ZH 頁 title 尾端的作者名 | `author_name` 中的中文部分；無中文則同 `author_name` |
 | `person_id` / `person_name` / `person_alt_names` | JSON-LD Person 節點 | 先抓 `author_url` 頁面的 JSON-LD：已宣告 Person 就**沿用其 `@id` 與 `name`**（跨站實體歸戶）；沒有則 `@id = {author_url}#person`、`name = author_name` |
-| `same_as` | Person `sameAs` 與署名列外部連結 | 作者網站 Person `sameAs` 與 `https://github.com/{github_owner}`、LinkedIn 等個人檔案取聯集；**排除 `author_url` 本身**（已由 `url` 表達）與組織帳號（放 `org_same_as`）；只列確認實際存在的個人檔案 |
+| `same_as` | Person `sameAs` 與署名列外部連結 | **以 `~/.skill-readme-generate.json` 的 `same_as` 為必含清單，逐項全數放入、不得刪減**（使用者 2026-10-02 指定，含作者網站本身）；專案可再加，組織帳號另放 `org_same_as`。共用設定缺 `same_as` 時詢問使用者並寫回該檔 |
 | `org_name` / `org_name_zh` | Organization 節點與署名列組織段，EN／ZH 頁各用自己語言的正式名稱（另一語言進 `alternateName`）；**逐字採用使用者寫法**（含標點） | 空字串＝無組織，不產生 Organization |
 | `org_same_as` | Organization `sameAs`（如組織的 GitHub org） | 空陣列 |
 | `tagline` | 署名列與 llms.txt 的定位文字（如 `Taiwan · Infrastructure Engineering`），不產生任何 schema 實體 | 空字串＝不輸出 |
+| `favicon` | 全站 favicon，存成 `public/favicon.png`，`FAVICON` 填 `/favicon.png` | 來源同 `og_image` 候選；須 1:1、至少 48x48（建議 48 的倍數，如 192x192），以 `sips -z 192 192 <src> -s format png --out public/favicon.png` 轉成 PNG（Google 支援 PNG／ICO 等，不列 SVG）；找不到可驗證的 1:1 圖就留空 |
 | `og_image` | 全站 `og:image`／`twitter:image` | 候選：`author_url` 網站的 logo、`https://github.com/{github_owner}.png`；**必須 `curl -sIL` 驗證 200 且為 image/***，否則留空 |
 | `has_physical_location` | 是否需 LocalBusiness | 文件站固定 `false`，不詢問 |
+| `brand_keywords` | 每頁 `<meta name="keywords">` 尾端補上的品牌詞（人名、帳號、組織名），已存在於該頁 keywords 者不重複 | 空陣列 |
+| `x_default` | hreflang `x-default` 指向的語言：`en`／`zh`／空字串（不輸出） | 空字串；只在使用者明確指定時填值 |
 | `ai_train` / `ai_input` / `ai_search` | R13 AI 使用偏好：`y`／`n`／空字串（不表態）；分別對應 aipref `train-ai`／`ai-use`／`search` 與 Content Signals `ai-train`／`ai-input`／`search` | 必須詢問使用者，不得代填 |
 
 `locales`（依實際語言版本）、`locale_policy: per-language-full`、`engines: [google, google-ai, chatgpt, perplexity, claude]` 為固定值，直接寫入，不詢問。
@@ -289,6 +292,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
 ├── wrangler.toml                         (`{repo}-wiki`；Cloudflare Workers 部署設定；首次生成時從 skill 範本複製)
 └── public/
     ├── docs.css                          (文件站樣式；**每次生成都從 skill 範本整檔覆蓋**，不手動維護)
+    ├── demo.js                           (前端套件的即時範例執行器；`DEMO_SCRIPT` 有值時**每次生成都從 skill 範本整檔覆蓋**，見 Step 5.1)
     ├── sitemap.xml                       (build.js 產出，勿手動編輯)
     ├── robots.txt                        (build.js 產出，勿手動編輯)
     ├── _headers                          (build.js 產出：`.md`／`*.txt` 的 `charset=utf-8`，勿手動編輯)
@@ -341,6 +345,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
    cp {skill_dir}/scripts/templates/package.json <project_root>/wiki-worker/package.json
    cp {skill_dir}/scripts/templates/wrangler.toml <project_root>/wiki-worker/wrangler.toml
    cp {skill_dir}/scripts/templates/indexnow.js <project_root>/wiki-worker/indexnow.js
+   cp {skill_dir}/scripts/templates/demo.js <project_root>/wiki-worker/public/demo.js   # 僅前端套件（Step 5.1）
    ```
 2. 先讀取 `build.js`，確認下列 placeholder 仍存在；**僅替換存在且值不同的 placeholder**，改為實際值（Step 0.3 收集的欄位）。目標值已正確時不寫入：
 
@@ -352,6 +357,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
    | `{{AUTHOR_NAME}}` | `~/.skill-readme-generate.json` `author_name` |
    | `{{AUTHOR_NAME_ZH}}` | Step 0.3 `author_name_zh` |
    | `{{AUTHOR_URL}}` | `~/.skill-readme-generate.json` `author_url` |
+   | `{{AUTHOR_HANDLE}}` | `~/.skill-readme-generate.json` `github_owner`（作者帳號；repo 在組織底下時與 `{{REPO}}` 的 owner 不同） |
    | `{{GTAG_ID}}` | Step 0.3 `gtag_id`（留空則保持空字串） |
    | `{{PERSON_ID}}` / `{{PERSON_NAME}}` | Step 0.3 `person_id` / `person_name` |
    | `// {{PERSON_ALT_NAMES}}` | Step 0.3 `person_alt_names`，展開為字串陣列元素（可含 `github_owner`） |
@@ -361,14 +367,20 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
    | `{{TAGLINE}}` | Step 0.3 `tagline`（署名列與 llms.txt 的定位文字，如 `Taiwan · Infrastructure Engineering`；空字串＝不輸出。**不**產生 Organization 節點——定位描述不是註冊實體） |
 | `{{ORG_ID}}` / `{{ORG_URL}}` | 有組織時：`{author_url 網站根}#organization` / 組織網站（無則 `author_url`）；無組織時留空字串 |
    | `{{OG_IMAGE}}` | Step 0.3 `og_image`（已驗證；空字串＝不輸出圖片 meta） |
+   | `{{FAVICON}}` | Step 0.3 `favicon`（`public/` 下的站台路徑，如 `/favicon.png`；空字串＝不輸出 `<link rel="icon">`） |
+   | `{{DEMO_SCRIPT}}` | 前端套件（Step 5.1 判準）：`https://cdn.jsdelivr.net/npm/{package}@{version}/dist/<瀏覽器建置檔>`，`{version}` 原樣保留由 build.js 代入 `package.json` 版本；非前端套件留空字串 |
+   | `// {{DEMO_SCRIPT_ATTRS}}` | 套件 script 標籤必須帶的額外屬性，展開為物件屬性（例：RenderJS `copyright: "Pardn Ltd"`）；套件不需要時保持空物件 |
+   | `// {{DEMO_LOG_IGNORE}}` | 套件自行印出、與範例無關的 console 輸出前綴（例：nanojson `"NanoJSON: https://"`），展開為字串陣列元素；預覽 log 區略過以這些前綴開頭的輸出；不需要時保持空陣列 |
    | `{{AI_TRAIN}}` / `{{AI_INPUT}}` / `{{AI_SEARCH}}` | Step 0.3 `ai_train` / `ai_input` / `ai_search` |
+   | `{{X_DEFAULT}}` | Step 0.3 `x_default` |
+   | `// {{BRAND_KEYWORDS}}` | Step 0.3 `brand_keywords`，展開為字串陣列元素 |
    | `{{HOME_TITLE}}` / `{{HOME_TITLE_ZH}}` | Step 8.2 R1 規則產出的首頁 title（EN / ZH 各自撰寫） |
    | `{{PROGRAMMING_LANGUAGE}}` | 主要語言（`go.mod` → `Go`、`package.json` → `JavaScript`／`TypeScript`、`pyproject.toml` → `Python`） |
    | `{{LICENSE_URL}}` | `LICENSE` 第一行對應 SPDX 授權網址（`MIT License` → `https://opensource.org/licenses/MIT`）；無 LICENSE 留空 |
 
    `sync-tags.js` 同樣有一個 `{{REPO}}`，用同一個 `{owner}/{repo}` 值替換。
 
-3. 將 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `NAV_ZH_SECTION` / `NAV_ZH_LABEL` / `DESCRIPTIONS_ZH` 這幾個物件依 Step 2 推導的頁面集合填入實際內容（**不得留 `// {{NAV}}` 等佔位註解**）
+3. 將 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `KEYWORDS_ZH`（選填，未列的 slug 沿用 `KEYWORDS`）/ `NAV_ZH_SECTION` / `NAV_ZH_LABEL` / `DESCRIPTIONS_ZH` 這幾個物件依 Step 2 推導的頁面集合填入實際內容（**不得留 `// {{NAV}}` 等佔位註解**）
 4. 將 `package.json` 與 `wrangler.toml` 內的 `{{REPO_NAME}}` 替換為 repo 名稱（lowercase，取 `{repo}` 的部分，不含 owner），使兩者 `name` 欄位皆為 `{repo}-wiki`
 5. 提示使用者於 `wiki-worker/` 下執行 `npm install`（安裝 `marked` 與 `wrangler`）
 
@@ -376,14 +388,16 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
 
 | 比對 | 動作 |
 |---|---|
-| 專案 `build.js` 的 `TEMPLATE_VERSION` 等於 `scripts/templates/build.js` | 只更新 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`NAV_ZH_*` 物件 |
-| 低於範本，或找不到 `TEMPLATE_VERSION`（1.2.0 前的範本） | 重新複製 `build.js` 與 `sync-tags.js` 範本，依 Step 3.1 第 2 步重新填值，再放回既有的 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`NAV_ZH_*` 頁面資料 |
+| 專案 `build.js` 的 `TEMPLATE_VERSION` 等於 `scripts/templates/build.js` | 只更新 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`KEYWORDS_ZH`／`NAV_ZH_*` 物件 |
+| 低於範本，或找不到 `TEMPLATE_VERSION`（1.2.0 前的範本） | 重新複製 `build.js` 與 `sync-tags.js` 範本，依 Step 3.1 第 2 步重新填值，再放回既有的 `NAV`／`DESCRIPTIONS`／`KEYWORDS`／`KEYWORDS_ZH`／`NAV_ZH_*` 頁面資料 |
 
 `package.json` 的 `scripts` 也對齊範本（範本新增的流程如 IndexNow 串在 `deploy` 中），`name` 與相依版本不動；範本新增的腳本檔（如 `indexnow.js`）一併複製。
 
-重新填值的來源：既有 `build.js` 的站台常數值 → `wiki-worker/.doc/seo/config.json` → Step 0.3 預設 fallback。新範本新增、但兩處都沒有值的欄位（如舊站沒有 `tagline`）填預設值，並在回應中列出。`package.json`、`wrangler.toml` 不動。
+重新填值的來源：既有 `build.js` 的站台常數值 → `wiki-worker/.doc/seo/config.json` → Step 0.3 預設 fallback。新範本新增、但兩處都沒有值的欄位（如舊站沒有 `tagline`）填預設值，並在回應中列出。`package.json`、`wrangler.toml` 不動，唯一例外：`wrangler.toml` 缺 `[observability]` 區段時補上 `enabled = false`（使用者 2026-10-03 指定所有文件站關閉 Workers observability）。
 
-回應中列出 `scripts/templates/CHANGELOG.md` 介於兩版之間的各節（新增／變更／移除），讓使用者知道這次站台多了什麼、少了什麼。
+專案端若有自行實作的範例機制（`<pkg>-demo` fence、`public/<pkg>-demo.js`、自訂 `renderDemos()`，例：QuickUI、NanoMD、nanojson），重新複製 `build.js` 後該機制會消失：把對應 code block 依 Step 5.1 改寫成 ` ```demo `（JS-only 範例補上掛載點 HTML 並包進 `<script>`），刪除舊的 `public/<pkg>-demo.js`，並把舊值填入 `DEMO_SCRIPT`。
+
+讀 `scripts/templates/CHANGELOG.md` 定位差異：「破壞性變更」全部項目逐項比對專案現有檔案，命中即直接修改；回應中列出命中項與改動。
 
 **為何：** 範本是同一份設計在所有專案的單一來源；逐項「找不到某字樣就移植某函式」的例外條款只擋得住當初寫進 SKILL.md 的那一項，其餘改動會靜默漏掉。歷史事故（go-llm-router 2026-10-02）：專案 `build.js` 停在 `TAGLINE` 與 `revealNav` 之前的版本，例外條款只移植了 `revealNav`，`TAGLINE` 一直沒進來。
 
@@ -399,6 +413,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
 
 ```bash
 cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs.css
+cp {skill_dir}/scripts/templates/demo.js <project_root>/wiki-worker/public/demo.js   # 僅 DEMO_SCRIPT 有值時
 ```
 
 **為何整檔覆蓋而非逐條補：** `docs.css` 與 `build.js` 是同一份設計的兩半——build.js 每新增一個 class（`nav-date`／`header-version`／`content .byline`／`pre.mermaid`），樣式就住在範本 css 裡。逐條檢查「有沒有某個字樣」只能擋住當初寫進 SKILL.md 的那一條，其餘新 class 會靜默沒有樣式：**HTML 完全合法、build 不報錯、SEO 檢查全過，只有人眼看得出版面壞掉**。歷史事故（go-bot 2026-09-20）：舊 css 缺 `.nav-date`／`.header-version`／`.content .byline` 三條，版本側欄的日期因為沒有 `float:right` 直接黏在 tag 後面渲染成 `v0.5.02026-09-20`，署名列也沒有分隔線；當時 SKILL.md 只要求檢查 `pre.mermaid`，所以三條全部漏掉。css 是生成資產，與 `public/*.html` 同級，專案端沒有客製它的正當理由。
@@ -407,12 +422,13 @@ cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs
 
 ### Step 3.1.1：範本版號與 CHANGELOG
 
-修改 `scripts/templates/` 下任何檔案（`build.js`／`docs.css`／`sync-tags.js`）時，同一次改動內：
+修改 `scripts/templates/` 下任何檔案（`build.js`／`docs.css`／`sync-tags.js`／`demo.js`）時，同一次改動內：
 
 1. 升 `build.js` 的 `TEMPLATE_VERSION`（新增功能 minor、修正 patch、移除或破壞相容 major）
-2. 在 `scripts/templates/CHANGELOG.md` 新增一節，分 `Added`／`Changed`／`Removed`；移除的行為必須寫進 `Removed` 並註明原本存在的版本範圍，舊節不刪
+2. 更新 `scripts/templates/CHANGELOG.md` 的「最新改動」日期
+3. 本次含移除行為或需專案端處理的變更 → 寫進「破壞性變更」（一項一行、新者在上）；新增與修正不記錄。CHANGELOG 不寫版號
 
-**為何：** 版號是 Step 3.1 判斷專案是否落後的唯一依據；CHANGELOG 是使用者得知「站台這次多了什麼、拿掉什麼」的唯一來源。
+**為何：** 版號是 Step 3.1 判斷專案是否落後的唯一依據。讀完整規範（本檔＋`scripts/templates/`）即得最新規範；CHANGELOG 只負責快速定位專案現有檔案與最新規範的差異，命中即直接修改。只記破壞性變更，檔案不隨改動無限增長，落後多次的專案也能一次看完必須處理的項目；新增與修正的結果已在現行範本內，對齊即自動取得。
 
 ### Step 3.2：同步版本紀錄（GitHub Releases）
 
@@ -492,6 +508,51 @@ cd <project_root>/wiki-worker && node build.js
 - **不**放生成標注 —— 文件站無需每頁重複「本文件由 SKILL 生成」；如需標注放進 repo 的 `README.md`
 - **不**放徽章列 / Star history / Author 區段 / 版權 footer —— 這些屬 landing page（`wiki-worker/public/index.html`）或 `README.md`，不屬文件內容
 
+### Step 5.1：前端套件的即時範例（強制）
+
+目標：讀者在程式碼正下方直接看到它跑起來的結果，不必自己建頁面試。
+
+**判準（全部成立才是前端套件）：**
+
+| 條件 | 驗證方式 |
+|---|---|
+| 在瀏覽器執行 | 建置產物註冊 `window.X`（UMD／IIFE）、`package.json` 有 `browser`／`unpkg`／`jsdelivr` 欄位，或原始碼操作 `document`／DOM |
+| 已發佈且 CDN 可取得 | `curl -sI https://cdn.jsdelivr.net/npm/{package}@{version}/dist/<檔>` 回 200；`package.json` 的版本尚未發佈時，`DEMO_SCRIPT` 寫死最新已發佈版本，不用 `{version}` |
+
+成立時 `DEMO_SCRIPT` 必填，build.js 會讓**每一頁**（文件頁、版本頁）的 `<head>` 都以 `defer` 載入該腳本；不成立則留空，以下規則不適用。
+
+**寫法：** 主題頁中每個「能在瀏覽器直接執行的使用範例」一律寫成 ` ```demo ` fence，不用 ` ```html `／` ```javascript `；build.js 會在程式碼正下方接上即時預覽。
+
+<example>
+````markdown
+```demo
+<section id="editor"></section>
+<script>
+  const editor = new JSONEditor({
+    id: "editor",
+    fill: false,
+    json: { name: "NanoJSON" },
+    when: { rendered: () => console.log(editor.json) },
+  });
+</script>
+```
+````
+</example>
+
+| 規則 | 為何 |
+|---|---|
+| 內容是完整 HTML：掛載點元素＋`<script>`，可整段複製到空白頁就能跑 | iframe 只放這段內容；缺掛載點就是空白預覽 |
+| 不寫套件的 `<script src>`（寫了也會被 `demo.js` 移除） | iframe 已先載入 `DEMO_SCRIPT`，重複載入會重複初始化 |
+| 要讀者看到的結果（序列化輸出、鉤子觸發順序、錯誤）用 `console.log` 印出 | 預覽下方的 log 區只接 console 與未捕捉錯誤 |
+| 需要填滿容器的元件給明確尺寸（如 `fill: false` 或容器設 `height`） | iframe 高度依內容自動調整，絕對定位填滿的元件高度會是 0 |
+| 每個概念頁、API 頁、生命週期頁至少一個範例，展示該頁主題的行為；記錄邊界或缺陷的段落附上重現範例 | 範例的價值是驗證文件描述；只放在 Getting Started 等於沒有 |
+| EN／ZH 兩版程式碼逐字相同，只翻譯前導句與程式碼註解 | 兩語言頁面行為必須一致 |
+| 不可在瀏覽器執行的區塊維持一般 fence：`npm install`、ESM `import` 行、型別簽章、Node／伺服器端程式 | 這些放進 iframe 只會報錯 |
+
+**驗證（強制）：** 每個 ` ```demo ` 都要在 headless Chrome 實際執行一次，確認預覽有渲染、log 內容與文件描述一致、沒有非預期錯誤；與文件描述不符時以實際行為為準修正文件。
+
+**為何：** 前端套件的文件只讀程式碼，讀者無法確認描述是否正確；即時預覽同時是給讀者的範例與給作者的回歸測試。歷史事故（nanojson 2026-10-04）：型別系統頁寫 `{"a": null}` 會拋 TypeError，實際執行範例後才發現是 `ReferenceError: _null is not defined`。
+
 ### ZH 翻譯策略
 
 - 技術術語第一次出現 = 英文 + 中文註解，後續純中文
@@ -551,8 +612,9 @@ cd <project_root>/wiki-worker && node build.js
 |---|---|---|
 | R1 Title | `HOME_TITLE`／`HOME_TITLE_ZH`；其餘頁由範本組成 `{label} - {SITE_NAME} Docs - {AUTHOR_NAME}`／`{label}｜{SITE_NAME} 文件｜{AUTHOR_NAME_ZH}` | 首頁 title 含主要**產品**關鍵字；EN ≤ 60 字元、ZH ≤ 30 字；各語言自身撰寫；品牌詞只出現一次 |
 | R2 Description | `DESCRIPTIONS`／`DESCRIPTIONS_ZH` 每頁一句 | 描述該頁實際內容；EN ≤ 160 字元、ZH ≤ 80 字；**禁止樣板句**；首頁 description 含產品類別＋作者名；版本頁由 `releaseDescription()` 取各自 `## Summary` |
-| R3 canonical／lang／hreflang | 範本內建 | `en` + `zh-Hant-TW` 兩條 alternate，**不輸出 `x-default`**（語言等權）；版本頁無 alternate |
-| R4 OG／Twitter | 範本內建 | 首頁 `og:type website`、其餘 `article`；`twitter:card summary`；`OG_IMAGE` 為空則不輸出圖片 meta，並在報告列「需提供 OG 圖」 |
+| R3 canonical／lang／hreflang | 範本內建 | `en` + `zh-Hant-TW` 兩條 alternate；`X_DEFAULT` 有值時另輸出 `x-default` 指向該語言版本，預設空字串不輸出（語言等權）；版本頁無 alternate |
+| R14 Favicon | `public/favicon.png`＋`FAVICON` | 每頁 `<head>` 有 `<link rel="icon">`；檔案 1:1、≥ 48x48、PNG／ICO；為空時在報告列「需提供 favicon」 |
+| R4 OG／Twitter | 範本內建 | 首頁 `og:type website`、其餘 `article`；`OG_IMAGE` 有值時 `twitter:card summary_large_image`，為空則 `summary` 且不輸出圖片 meta，並在報告列「需提供 OG 圖」 |
 | R5 標題階層 | 主題頁 md 以 `# ` 開頭；首頁與版本頁由 `ensureH1()` 補 | 每頁恰一個 h1；主內容在 `<main>`、導覽在 `<nav>` |
 | R6 JSON-LD | 範本內建 `@graph` | Person（沿用作者網站 `@id`）＋ Organization（有 `ORG_NAME` 才有）＋ WebSite ＋ 首頁 `SoftwareSourceCode`／其餘 `TechArticle`；不得加頁面上不存在的 FAQ／評分 |
 | R6 日期（A10） | 範本內建 `stampDates()`＋`public/docs/dates.json` | 每頁 `datePublished`／`dateModified` 由內容 SHA-256 判斷：雜湊變了才更新 `modified`，署名列可見顯示同一日期，sitemap `lastmod` 取同一值；版本頁用 release 日期。**不得**改用檔案 mtime 或建置時間（重新產生檔案就會變動，屬操弄新鮮度） |
@@ -584,11 +646,12 @@ python3 {skill_dir}/scripts/seo/analyze_seo.py <project_root>/wiki-worker
 | h1 | 每頁恰 1 個 |
 | JSON-LD | 可解析，含 Person／WebSite（有組織時含 Organization），首頁為 `SoftwareSourceCode` |
 | 日期 | 每個文件頁 JSON-LD 有 `datePublished`／`dateModified`，署名列有相同日期的 `<time>`；連續編譯兩次 `dates.json` 不變 |
-| 實體 | Organization `name` 為真實組織且 EN／ZH 各用自身語言；Person `sameAs` 不含 `author_url`；與作者網站 JSON-LD 比對差異列入報告 |
+| 實體 | Organization `name` 為真實組織且 EN／ZH 各用自身語言；Person `sameAs` 包含共用設定 `same_as` 的每一項；與作者網站 JSON-LD 比對差異列入報告 |
 | IndexNow | 部署後 `{key}.txt` 回 200，`indexnow.js` 回 HTTP 200／202；再跑一次顯示 `no changed URLs` |
 | 署名列 | 每頁有 `class="byline"` |
 | Twitter／OG | 每頁有 `twitter:card`；`OG_IMAGE` 非空時有 `og:image` |
-| hreflang／lang | 無 `x-default`；ZH 頁 `lang="zh-Hant-TW"` |
+| Favicon | `FAVICON` 非空時每頁有 `<link rel="icon">`，且 `public{FAVICON}` 存在、為 1:1 且 ≥ 48x48 |
+| hreflang／lang | `X_DEFAULT` 為空時無 `x-default`，有值時每個非版本頁恰一條且指向該語言；ZH 頁 `lang="zh-Hant-TW"` |
 | title／description 長度 | 符合 Step 8.2 R1／R2 上限；description 無重複 |
 | LLM 定位 | 每頁署名列有 `llms.txt` 與本頁 Markdown 連結；`llms.txt` 有 `## Symbols` 且條目數 > 0；`llms-full.txt`（有 ZH 頁時含 `zh/llms-full.txt`）存在且每段有 `Source:` |
 | 文字檔編碼 | 部署後 `curl -sI {domain}/llms.txt`、`/llms-full.txt` 與任一 `.md`（含 `/zh/`）的 `Content-Type` 帶 `charset=utf-8`；不帶就是 `_headers` 沒生效，中文會以 Latin-1 顯示成亂碼 |
@@ -614,7 +677,7 @@ python3 {skill_dir}/scripts/seo/analyze_seo.py <project_root>/wiki-worker
 ### 結構
 - [ ] `wiki-worker/build.js` 存在且無殘留 `{{PLACEHOLDER}}` 或 `// {{NAV}}` 等佔位註解
 - [ ] 專案 `build.js` 的 `TEMPLATE_VERSION` 與 `scripts/templates/build.js` 相同
-- [ ] 本次若改過 `scripts/templates/`：`TEMPLATE_VERSION` 已升版，`CHANGELOG.md` 已新增對應一節
+- [ ] 本次若改過 `scripts/templates/`：`TEMPLATE_VERSION` 已升版，`CHANGELOG.md` 的「最新改動」日期已更新，破壞性變更已寫入「破壞性變更」
 - [ ] `check_coverage.py` exit 0（`missing`／`removed`／`undocumented_removals` 皆為空）
 - [ ] `wiki-worker/public/docs.css` 與 `scripts/templates/docs.css` 逐字相同（`diff` 無輸出）
 - [ ] build.js 輸出的每個自有 class 在 docs.css 都找得到規則（外部來源的 `fa-*`（Font Awesome）、`language-*`（marked 產生的 code fence）除外）：
@@ -627,7 +690,9 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 
       有輸出代表新 class 沒樣式：先把規則補進 `scripts/templates/docs.css`，再整檔覆蓋回專案
 - [ ] `wiki-worker/sync-tags.js` 存在且 `REPO` 已是實際 `{owner}/{repo}`，無殘留 `{{REPO}}`
+- [ ] 前端套件（Step 5.1）：`DEMO_SCRIPT` 解析後的 URL `curl -sI` 回 200；`public/demo.js` 與 `scripts/templates/demo.js` 逐字相同；每個編譯後 HTML 都含 `data-demo defer` 的腳本；專案端舊的 `<pkg>-demo` 機制已移除
 - [ ] `wiki-worker/package.json` 與 `wiki-worker/wrangler.toml` 存在，`name` 皆為 `{repo}-wiki`，無殘留 `{{REPO_NAME}}`
+- [ ] `wiki-worker/wrangler.toml` 含 `[observability]` `enabled = false`
 - [ ] `wiki-worker/public/docs/pages/home.md` 存在且內容逐字鏡像 `README.md`
 - [ ] README 引用的本地圖片（如有）已原樣複製到 `wiki-worker/public/assets/`，且 `home.md`／`home.zh.md` 內圖片路徑已改寫為 `/assets/<檔名>`
 - [ ] 每個 NAV 內宣告的 slug 都有對應 `pages/<slug>.md`
@@ -648,12 +713,13 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 - [ ] 標題與 NAV 內 `label` 語意一致
 - [ ] 章節結構與對向語言版本對齊
 - [ ] 程式碼區塊指定語言識別碼
+- [ ] 前端套件：可在瀏覽器執行的使用範例皆為 ` ```demo `，且每個都已在 headless Chrome 實跑過、log 與文件描述一致
 - [ ] **無** 徽章 / star history / author 區段 / 版權 footer / 生成標注
 
 ### SEO / AEO（Step 8）
 - [ ] 完整生成時本次實際跑過 Phase A＋B，digest 已寫入 `wiki-worker/.doc/seo/research-{date}.md`
 - [ ] `wiki-worker/.doc/seo/config.json` 存在且欄位完整
-- [ ] `build.js` 無殘留 `{{PERSON_*}}` / `{{ORG_*}}` / `{{OG_IMAGE}}` / `{{HOME_TITLE*}}` / `// {{SAME_AS}}` 等 SEO placeholder
+- [ ] `build.js` 無殘留 `{{PERSON_*}}` / `{{ORG_*}}` / `{{OG_IMAGE}}` / `{{FAVICON}}` / `{{HOME_TITLE*}}` / `// {{SAME_AS}}` 等 SEO placeholder
 - [ ] `OG_IMAGE` 為空或已驗證 HTTP 200 image；`PERSON_ID` 與作者網站既有 JSON-LD 一致（若有）
 - [ ] Step 8.4 表格全部通過，`public/llms.txt` 存在
 - [ ] `{ts}-applied.md` 已產出
@@ -677,7 +743,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 5. 推導頁面 → 預設集 + CLAUDE.md 一級標題派生；每頁決定 slug / label / section
 6. 首次生成 → 複製 build.js / sync-tags.js / docs.css / package.json / wrangler.toml 範本，替換站台與 SEO placeholder，填入 NAV 等物件
 7. 生成 Home → pages/home.md + home.zh.md
-8. 生成每頁 → ZH 先寫、EN 翻譯（對齊章節結構），寫入 pages/<slug>.md(.zh.md)；DESCRIPTIONS／HOME_TITLE 依 Step 8.2
+8. 生成每頁 → ZH 先寫、EN 翻譯（對齊章節結構），寫入 pages/<slug>.md(.zh.md)；DESCRIPTIONS／HOME_TITLE 依 Step 8.2；前端套件的使用範例寫成 ```demo 並實跑驗證（Step 5.1）
 9. 靜默修正 → 對照 code / config 修正常見錯漏
 10. 同步版本 → node wiki-worker/sync-tags.js（`--only` 模式跳過）
 11. 編譯 → node wiki-worker/build.js；檢查 stdout 無 SKIP
@@ -712,7 +778,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 | 在 md 或 build.js 手寫頁面上不存在的 schema（FAQPage、aggregateRating、假作者） | 結構化資料垃圾，會被人工處分；JSON-LD 一律由範本 `@graph` 依可見內容產生 |
 | `OG_IMAGE` 填未驗證或捏造的圖片網址 | 分享卡顯示破圖；找不到真實圖檔就留空並列入待辦 |
 | 自行新造 Person `@id`，而作者網站已宣告過 | 同一人被拆成兩個實體，無法跨站歸戶 |
-| 輸出偏向單一語言的 `x-default` | 語言等權為固定政策 |
+| 未經使用者指定就填 `X_DEFAULT` | 語言等權為預設政策；偏向單一語言的 `x-default` 只能由使用者決定 |
 | 把定位文字（地區、職能、口號）填進 `org_name` | 產生不存在的 Organization 實體並掛作者為 founder，污染實體圖；歷史事故（go-llm-router 2026-10-02）：「Taiwan · Infrastructure Engineering」被宣告成組織 |
 | 以檔案 mtime 或建置時間當 `dateModified` | 檔案重新產生就會變動，內容沒改日期卻更新，屬操弄新鮮度（A10） |
 | 刪除或手改 `public/docs/dates.json` | 所有頁面的發布日期會重置成重建當天 |
@@ -721,4 +787,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 | 從文件刪除已移除的 API，或移除紀錄不寫版本號 | 升級中的讀者需要知道符號去哪了、從哪一版開始；`Removed in` 是 `check_coverage.py` 辨識移除紀錄的關鍵字 |
 | 非首次生成時沿用舊版範本、只挑部分函式移植 | 逐項移植會靜默漏掉其他改動；一律依 `TEMPLATE_VERSION` 整份對齊 |
 | 研究查到規格新版卻列為「選用、交由使用者決定」 | 規格更新直接進範本並升版，再同步到專案 |
-| 改範本卻沒升 `TEMPLATE_VERSION`／沒寫 CHANGELOG | 專案端無法偵測落後，使用者也無從得知變更內容 |
+| 改範本卻沒升 `TEMPLATE_VERSION`／沒寫 CHANGELOG | 專案端無法偵測落後，也無法快速定位需修改的差異 |
+| 前端套件的使用範例只寫成一般 code block，沒有即時預覽 | 讀者無法確認描述是否正確，文件錯誤也不會被發現（見 Step 5.1 歷史事故） |
+| 在專案端另寫 `<pkg>-demo` fence／執行器 | 與範本分岔，下次對齊範本時會整個消失；通用改進一律改 `scripts/templates/` |
+| 範例未實際執行就寫進文件 | 預覽壞掉或與描述不符只有人眼看得出，build 與 SEO 檢查都不會攔 |

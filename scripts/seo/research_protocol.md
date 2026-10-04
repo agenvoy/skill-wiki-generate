@@ -47,7 +47,7 @@
 | `https://developers.google.com/search/updates` | 近半年文件變更清單 |
 | `https://developers.openai.com/api/docs/bots` | OpenAI 各 user-agent 用途與 robots.txt 行為 |
 | `https://support.claude.com/en/articles/8896518` | Anthropic 各 crawler 用途與 robots.txt 行為 |
-| `https://developers.google.com/search/docs/crawling-indexing/google-user-triggered-fetchers` | Google 使用者觸發型 fetcher 清單（含 `Google-Agent`） |
+| `https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers` | Google 使用者觸發型 fetcher 清單（含 `Google-Agent`） |
 
 若上述 URL 404 或改版，記錄實際狀況並改抓 Google Search Central 首頁找對應新頁面。**不得因抓不到就跳過本步驟並沿用記憶。**
 

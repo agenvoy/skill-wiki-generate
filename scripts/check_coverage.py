@@ -7,7 +7,8 @@ from pathlib import Path
 
 SKIP_PARTS = {"cmd", "internal", "testdata", "vendor", "examples", "example"}
 IDENT_IN_TICKS = re.compile(r"`([^`\n]+)`")
-EXPORTED_TOKEN = re.compile(r"(?<![\w-])([A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*)(?![\w-])")
+QUOTED_LITERAL = re.compile(r'"[^"]*"|\'[^\']*\'')
+EXPORTED_TOKEN = re.compile(r"(?<![\w/-])([A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*)(?![\w/-])")
 REMOVED_MARK = re.compile(r"Removed in|移除於")
 
 
@@ -138,15 +139,18 @@ def is_covered(sym: dict, docs: str, module_path: str) -> bool:
     return package_mentioned(sym["package"], docs, module_path)
 
 
-def doc_identifiers(pages: list[Path]) -> dict[str, set[str]]:
+def doc_identifiers(pages: list[Path], foreign_qualifier) -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
     for page in pages:
         for line in page.read_text(encoding="utf-8").splitlines():
             if REMOVED_MARK.search(line):
                 continue
             for span in IDENT_IN_TICKS.findall(line):
-                for token in EXPORTED_TOKEN.findall(span):
-                    found.setdefault(token, set()).add(page.name)
+                span = QUOTED_LITERAL.sub(lambda q: " " * len(q.group(0)), span)
+                for m in EXPORTED_TOKEN.finditer(span):
+                    if foreign_qualifier(span[:m.start()]):
+                        continue
+                    found.setdefault(m.group(1), set()).add(page.name)
     return found
 
 
@@ -206,9 +210,17 @@ def main() -> int:
         write_symbols.parent.mkdir(parents=True, exist_ok=True)
         write_symbols.write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    local_pkgs = {module_path.rsplit("/", 1)[-1]} | {s["package"].rsplit("/", 1)[-1] for s in symbols} if is_go else set()
+
+    def foreign_qualifier(prefix: str) -> bool:
+        m = re.search(r"(?<![\w.])([a-z][a-z0-9_]*)\.$", prefix)
+        return bool(is_go and m and m.group(1) not in local_pkgs)
+
     words = code_words(root, ext)
+    if ext in {".js", ".ts"}:
+        words.update(run(["node", "-e", "console.log(Object.getOwnPropertyNames(globalThis).join(' '))"], root).split())
     removed = []
-    for token, where in sorted(doc_identifiers(pages).items()):
+    for token, where in sorted(doc_identifiers(pages, foreign_qualifier).items()):
         if token in words:
             continue
         info = removal_version(root, token, ext)

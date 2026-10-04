@@ -115,6 +115,7 @@ JS_EXPORT_FUNC_RE = re.compile(
     r"export\s+(?:async\s+)?function\s+(\w+)\s*(?:<[^>]+>)?\s*\(([^)]*)\)"
 )
 JS_EXPORT_CLASS_RE = re.compile(r"export\s+class\s+(\w+)")
+JS_WINDOW_EXPORT_RE = re.compile(r"^((?:window\.[\w$]+\s*=\s*)+)(\w+)\s*;?\s*$", re.MULTILINE)
 
 
 def _pattern_exists(root: Path, pattern: str) -> bool:
@@ -468,6 +469,24 @@ def _scan_script_symbols(
         TypeInfo(name=m.group(1), kind="class", file=rel_path)
         for m in JS_EXPORT_CLASS_RE.finditer(content)
     ]
+    exports = [
+        (public, local)
+        for chain, local in JS_WINDOW_EXPORT_RE.findall(content)
+        for public in re.findall(r"window\.([\w$]+)", chain)
+    ]
+    for public, local in exports:
+        if re.search(rf"\bclass\s+{re.escape(local)}\b", content):
+            types.append(TypeInfo(name=public, kind="class", file=rel_path))
+            continue
+        params = re.search(rf"\bfunction\s+{re.escape(local)}\s*\(([^)]*)\)", content)
+        functions.append(
+            FunctionInfo(
+                name=public,
+                signature=f"function {local}({params.group(1) if params else ''})",
+                exported=True,
+                file=rel_path,
+            )
+        )
     return types, functions
 
 

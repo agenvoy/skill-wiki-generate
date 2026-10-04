@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { marked } = require("marked");
 
-const TEMPLATE_VERSION = "1.5.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "1.14.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
@@ -12,6 +12,7 @@ const REPO = "{{REPO}}"; // owner/repo
 const AUTHOR_NAME = "{{AUTHOR_NAME}}";
 const AUTHOR_NAME_ZH = "{{AUTHOR_NAME_ZH}}";
 const AUTHOR_URL = "{{AUTHOR_URL}}";
+const AUTHOR_HANDLE = "{{AUTHOR_HANDLE}}";
 const GTAG_ID = "{{GTAG_ID}}"; // empty string disables analytics
 
 // === SEO / entity config — filled in by wiki-generate (SKILL.md Step 0.3 / Step 8) ===
@@ -32,6 +33,14 @@ const TAGLINE = "{{TAGLINE}}"; // byline-only positioning text (e.g. "Taiwan · 
 const ORG_ID = "{{ORG_ID}}";
 const ORG_URL = "{{ORG_URL}}";
 const OG_IMAGE = "{{OG_IMAGE}}"; // empty string omits og:image / twitter:image
+const FAVICON = "{{FAVICON}}";
+const DEMO_SCRIPT = "{{DEMO_SCRIPT}}".replace("{version}", () => require("../package.json").version);
+const DEMO_SCRIPT_ATTRS = {
+  // {{DEMO_SCRIPT_ATTRS}}
+};
+const DEMO_LOG_IGNORE = [
+  // {{DEMO_LOG_IGNORE}}
+];
 const HOME_TITLE = "{{HOME_TITLE}}";
 const HOME_TITLE_ZH = "{{HOME_TITLE_ZH}}";
 const PROGRAMMING_LANGUAGE = "{{PROGRAMMING_LANGUAGE}}";
@@ -40,8 +49,10 @@ const ZH_LANG = "zh-Hant-TW";
 const AI_TRAIN = "{{AI_TRAIN}}";
 const AI_INPUT = "{{AI_INPUT}}";
 const AI_SEARCH = "{{AI_SEARCH}}";
-
-const OWNER = REPO.split("/")[0];
+const X_DEFAULT = "{{X_DEFAULT}}";
+const BRAND_KEYWORDS = [
+  // {{BRAND_KEYWORDS}}
+];
 
 const PAGES_DIR = path.join(__dirname, "public/docs/pages");
 const OUT_DIR = path.join(__dirname, "public");
@@ -114,6 +125,10 @@ const DESCRIPTIONS = {
 // slug -> English SEO keywords, comma separated
 const KEYWORDS = {
   // {{KEYWORDS}}
+};
+
+const KEYWORDS_ZH = {
+  // {{KEYWORDS_ZH}}
 };
 
 // English section label -> Traditional Chinese section label
@@ -207,6 +222,14 @@ function wrapTables(html) {
     .replace(/<\/table>/g, "</table></div>");
 }
 
+function renderDemos(html, lang = "en") {
+  if (!DEMO_SCRIPT) return html;
+  const label = lang === "zh" ? "即時預覽" : "Live preview";
+  const pkg = DEMO_SCRIPT.match(/\/npm\/((?:@[^/]+\/)?[^/]+)/)?.[1] || "";
+  return html.replace(/<pre><code class="language-demo">([\s\S]*?)<\/code><\/pre>/g,
+    `<div class="demo"><pre><code class="language-html">$1</code></pre><div class="demo-bar">${label}${pkg ? ` · ${pkg}` : ""}</div><iframe title="${label}"></iframe></div>`);
+}
+
 function renderMermaid(html) {
   return html.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>');
 }
@@ -231,15 +254,27 @@ function profileLabel(url) {
 
 const trimSlash = url => url.replace(/\/+$/, "");
 const BYLINE_LINKS = SAME_AS
-  .filter(u => trimSlash(u) !== trimSlash(AUTHOR_URL) && trimSlash(u) !== `https://github.com/${OWNER}`)
+  .filter(u => trimSlash(u) !== trimSlash(AUTHOR_URL) && trimSlash(u) !== `https://github.com/${AUTHOR_HANDLE}`)
   .map(u => ` · <a href="${u}" target="_blank" rel="noopener">${profileLabel(u)}</a>`)
   .join("");
+
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function titleTooLong(title, isZh) {
+  if (!isZh) return title.length > 60;
+  const cjk = (title.match(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/g) || []).length;
+  return cjk > 30 || cjk * 2 + (title.length - cjk) > 60;
+}
 
 function renderPage(slug, title, description, keywords, sidebar, content, toc, lang = "en", dates = null) {
   const isZh = lang === "zh";
   const isReleased = slug === "released" || slug.startsWith("released/");
   const base = isZh ? `${DOMAIN}/zh` : DOMAIN;
   const canonical = slug === "home" ? `${base}/` : `${base}/${slug}`;
+  const keywordList = keywords.split(",").map(k => k.trim());
+  const fullKeywords = [...keywordList, ...BRAND_KEYWORDS.filter(k => !keywordList.includes(k))].join(", ");
   let fullTitle;
   if (slug === "home") {
     fullTitle = isZh ? HOME_TITLE_ZH : HOME_TITLE;
@@ -247,6 +282,14 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     fullTitle = isZh
       ? `${title}｜${SITE_NAME} 文件｜${AUTHOR_NAME_ZH}`
       : `${title} - ${SITE_NAME} Docs - ${AUTHOR_NAME}`;
+    if (titleTooLong(fullTitle, isZh)) {
+      fullTitle = isZh
+        ? `${title}｜${SITE_NAME}｜${AUTHOR_NAME_ZH}`
+        : `${title} - ${SITE_NAME} - ${AUTHOR_NAME}`;
+    }
+    if (titleTooLong(fullTitle, isZh)) {
+      fullTitle = isZh ? `${title}｜${SITE_NAME}` : `${title} - ${SITE_NAME}`;
+    }
   }
 
   // language toggle target (counterpart page); released has no zh copy → fall back to zh docs home
@@ -260,7 +303,8 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   const altLinks = isReleased ? "" :
     `<link rel="alternate" hreflang="en" href="${enUrl}" />
     <link rel="alternate" hreflang="${ZH_LANG}" href="${zhUrl}" />
-    `;
+    ${X_DEFAULT ? `<link rel="alternate" hreflang="x-default" href="${X_DEFAULT === "zh" ? zhUrl : enUrl}" />
+    ` : ""}`;
 
   const inLanguage = isZh ? ZH_LANG : "en";
   const person = {
@@ -327,14 +371,14 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   const jsonLd = JSON.stringify({ "@context": "https://schema.org", "@graph": graph });
 
   const orgSegment = ORG_NAME ? ` · ${orgName}` : "";
-  const dateLabel = isReleased ? "Released" : (isZh ? "最後更新" : "Last updated");
+  const dateLabel = slug.startsWith("released/") ? "Released" : (isZh ? "最後更新" : "Last updated");
   const dateSegment = dates ? ` · ${dateLabel} <time datetime="${dates.modified}">${dates.modified}</time>` : "";
   const taglineSegment = TAGLINE ? ` · ${TAGLINE}` : "";
-  const ownerLink = `<a href="https://github.com/${OWNER}" target="_blank" rel="noopener">${OWNER}</a>`;
+  const handleLink = `<a href="https://github.com/${AUTHOR_HANDLE}" target="_blank" rel="noopener">${AUTHOR_HANDLE}</a>`;
   const agentLinks = ` · <a href="/llms.txt">llms.txt</a> · <a href="${markdownHref(slug, isZh)}" type="text/markdown">${isZh ? "本頁 Markdown" : "Markdown"}</a>`;
   const byline = isZh
-    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${ownerLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`
-    : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${ownerLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`;
+    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${handleLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`
+    : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${handleLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`;
 
   const ogImage = OG_IMAGE
     ? `
@@ -351,37 +395,43 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     `
     : "";
 
+  const titleHtml = escapeHtml(fullTitle);
+  const descriptionHtml = escapeHtml(description);
+  const keywordsHtml = escapeHtml(fullKeywords);
+
   return `<!doctype html>
 <html lang="${inLanguage}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="index, follow" />
-    <title>${fullTitle}</title>
-    <meta name="title" content="${fullTitle}" />
-    <meta name="description" content="${description}" />
-    <meta name="keywords" content="${keywords}" />
+    <title>${titleHtml}</title>
+    <meta name="title" content="${titleHtml}" />
+    <meta name="description" content="${descriptionHtml}" />
+    <meta name="keywords" content="${keywordsHtml}" />
     <meta name="author" content="${AUTHOR_NAME}" />
     <link rel="author" href="${AUTHOR_URL}" />
     <link rel="canonical" href="${canonical}" />
     <link rel="alternate" type="text/markdown" href="${DOMAIN}${markdownHref(slug, isZh)}" />
     <link rel="describedby" href="${DOMAIN}/llms.txt" />
-    ${altLinks}<meta property="og:title" content="${fullTitle}" />
-    <meta property="og:description" content="${description}" />
+    ${FAVICON ? `<link rel="icon" href="${FAVICON}" />
+    ` : ""}    ${altLinks}<meta property="og:title" content="${titleHtml}" />
+    <meta property="og:description" content="${descriptionHtml}" />
     <meta property="og:url" content="${canonical}" />
     <meta property="og:type" content="${slug === "home" ? "website" : "article"}" />
     <meta property="og:site_name" content="${SITE_NAME}" />
     <meta property="og:locale" content="${isZh ? "zh_TW" : "en_US"}" />${ogImage}
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="${fullTitle}" />
-    <meta name="twitter:description" content="${description}" />${twitterImage}
+    <meta name="twitter:card" content="${OG_IMAGE ? "summary_large_image" : "summary"}" />
+    <meta name="twitter:title" content="${titleHtml}" />
+    <meta name="twitter:description" content="${descriptionHtml}" />${twitterImage}
     <script type="application/ld+json">${jsonLd}</script>
     ${analytics}<link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/docs.css" />
-  </head>
+    ${DEMO_SCRIPT ? `<script src="${DEMO_SCRIPT}"${Object.entries(DEMO_SCRIPT_ATTRS).map(([k, v]) => ` ${k}="${v}"`).join("")}${DEMO_LOG_IGNORE.length ? ` data-demo-ignore='${JSON.stringify(DEMO_LOG_IGNORE).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'` : ""} data-demo defer></script>
+    ` : ""}  </head>
   <body>
     <header class="header">
       <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open');revealNav()" aria-label="Menu"><i class="fa-solid fa-bars"></i></button>
@@ -420,6 +470,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       },{rootMargin:'-80px 0px -70% 0px'});
       document.querySelectorAll('.content h2,.content h3').forEach(function(h){tocObs.observe(h)});
     </script>
+    ${content.includes('class="demo"') ? `<script src="/demo.js" defer></script>` : ""}
     ${content.includes('<pre class="mermaid">') ? `<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:"neutral",securityLevel:"strict"});</script>` : ""}
     ${isReleased ? "" : `<a href="${altHref}" class="lang-fab" aria-label="${isZh ? "Switch to English" : "Switch to Chinese"}" hreflang="${isZh ? "en" : ZH_LANG}"><i class="fa-solid fa-language"></i><span>${isZh ? "EN" : "中文"}</span></a>`}
   </body>
@@ -460,7 +511,7 @@ for (const slug of allSlugs) {
 
   const md = fs.readFileSync(mdPath, "utf-8");
   let html = marked.parse(md);
-  html = renderMermaid(wrapTables(addHeadingIds(html)));
+  html = renderDemos(renderMermaid(wrapTables(addHeadingIds(html))));
   if (slug === "home") html = ensureH1(html, SITE_NAME);
 
   const label = NAV.flatMap(g => g.items).find(i => i.slug === slug)?.label || slug;
@@ -484,14 +535,14 @@ for (const slug of allSlugs) {
   // zh variant — generated only when a translated source exists
   const zhMdPath = path.join(PAGES_DIR, `${slug}.zh.md`);
   if (fs.existsSync(zhMdPath)) {
-    let zhHtml = renderMermaid(wrapTables(addHeadingIds(marked.parse(fs.readFileSync(zhMdPath, "utf-8")))));
+    let zhHtml = renderDemos(renderMermaid(wrapTables(addHeadingIds(marked.parse(fs.readFileSync(zhMdPath, "utf-8"))))), "zh");
     if (slug === "home") zhHtml = ensureH1(zhHtml, SITE_NAME);
     const zhLabel = NAV_ZH_LABEL[slug] || label;
     const zhDesc = DESCRIPTIONS_ZH[slug] || desc;
     const zhSidebar = buildSidebar(slug, "zh");
     const zhToc = buildTOC(zhHtml, "zh");
     const zhMd = fs.readFileSync(zhMdPath, "utf-8");
-    const zhPage = renderPage(slug, zhLabel, zhDesc, kw, zhSidebar, zhHtml, zhToc, "zh", stampDates(`zh:${slug}`, zhMd));
+    const zhPage = renderPage(slug, zhLabel, zhDesc, KEYWORDS_ZH[slug] || kw, zhSidebar, zhHtml, zhToc, "zh", stampDates(`zh:${slug}`, zhMd));
     const zhOut = slug === "home"
       ? path.join(ZH_DIR, "index.html")
       : path.join(ZH_DIR, `${slug}.html`);
@@ -542,6 +593,8 @@ if (TAGS.length) {
     buildVersionSidebar("", TAGS, TAG_DATES),
     listHtml,
     buildTOC(listHtml),
+    "en",
+    { published: TAG_DATES[TAGS[TAGS.length - 1]], modified: TAG_DATES[TAGS[0]] },
   );
   fs.writeFileSync(path.join(RELEASED_DIR, "index.html"), indexPage);
   let listMd = `# Release Notes\n\nAll ${SITE_NAME} releases.\n`;
@@ -620,16 +673,19 @@ function symbolIndex() {
   const symbols = JSON.parse(fs.readFileSync(SYMBOLS_PATH, "utf-8"));
   const navOrder = allSlugs.filter(s => pageMd[s] && s !== "home");
   const liveText = Object.fromEntries(navOrder.map(slug => [slug, pageMd[slug].split("\n").filter(l => !/Removed in|移除於/.test(l)).join("\n")]));
+  const refSlugs = new Set(NAV.filter(g => g.section === "Reference").flatMap(g => g.items.map(i => i.slug)));
+  const isRef = slug => slug.startsWith("api-reference") || refSlugs.has(slug);
   const groups = new Map();
   for (const sym of symbols) {
-    const word = new RegExp(`\`[^\`\n]*(?<![\\w-])${sym.name}(?![\\w-])[^\`\n]*\``, "g");
+    const name = sym.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const word = new RegExp(`\`[^\`\n]*(?<![\\w$-])${name}(?![\\w$-])[^\`\n]*\``, "g");
     const hits = navOrder
       .map(slug => ({ slug, count: (liveText[slug].match(word) || []).length }))
       .filter(h => h.count > 0);
     if (!hits.length) continue;
     const best = list => list.sort((a, b) => b.count - a.count)[0];
-    const ref = best(hits.filter(h => h.slug.startsWith("api-reference")));
-    const concept = best(hits.filter(h => !h.slug.startsWith("api-reference")));
+    const ref = best(hits.filter(h => isRef(h.slug)));
+    const concept = best(hits.filter(h => !isRef(h.slug)));
     const pages = [ref, concept].filter(Boolean).map(h => h.slug);
     const key = `${sym.name}|${pages.join(",")}`;
     if (!groups.has(key)) groups.set(key, { name: sym.name, packages: [], pages });
@@ -640,7 +696,7 @@ function symbolIndex() {
 
 // === llms.txt ===
 const pageUrl = (slug, zh) => `${DOMAIN}${markdownHref(slug, zh)}`;
-let llms = `# ${SITE_NAME}\n\n> ${DESCRIPTIONS.home}\n\nMaintained by ${AUTHOR_NAME} (${OWNER})${ORG_NAME ? `, ${ORG_NAME}` : ""}${TAGLINE ? `, ${TAGLINE}` : ""}. Source: https://github.com/${REPO}\n\nFull text in one file: [English](${DOMAIN}/llms-full.txt)${fullZh.length ? ` · [中文](${DOMAIN}/zh/llms-full.txt)` : ""}\n`;
+let llms = `# ${SITE_NAME}\n\n> ${DESCRIPTIONS.home}\n\nMaintained by ${AUTHOR_NAME} (${AUTHOR_HANDLE})${ORG_NAME ? `, ${ORG_NAME}` : ""}${TAGLINE ? `, ${TAGLINE}` : ""}. Source: https://github.com/${REPO}\n\nFull text in one file: [English](${DOMAIN}/llms-full.txt)${fullZh.length ? ` · [中文](${DOMAIN}/zh/llms-full.txt)` : ""}\n`;
 for (const group of NAV) {
   const items = group.items.filter(i => fs.existsSync(path.join(PAGES_DIR, `${i.slug}.md`)));
   if (!items.length) continue;
