@@ -436,8 +436,6 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     <header class="header">
       <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open');revealNav()" aria-label="Menu"><i class="fa-solid fa-bars"></i></button>
       <a href="${isZh ? "/zh/" : "/"}" class="header-logo">${REPO}</a>
-      <span class="header-sep"></span>
-      <span class="header-title">${isZh ? "文件" : "Documentation"}</span>
       ${LATEST_VERSION ? `<a class="header-version" href="/released/${LATEST_VERSION}">${LATEST_VERSION}</a>` : ""}
       <div class="header-links">
         <a href="${isZh ? "/zh/" : "/"}">${isZh ? "首頁" : "Home"}</a>
