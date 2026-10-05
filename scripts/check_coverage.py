@@ -198,9 +198,11 @@ def main() -> int:
         return 2
     docs = "\n".join(p.read_text(encoding="utf-8") for p in pages)
 
-    is_go = (root / "go.mod").exists()
-    module_path = run(["go", "list", "-m"], root).strip() if is_go else ""
-    symbols = go_symbols(root) if is_go else analyzer_symbols(root)
+    go_mods = sorted(m for m in root.rglob("go.mod") if not {"node_modules", ".git", "vendor", "wiki-worker"} & set(m.relative_to(root).parts))
+    is_go = bool(go_mods)
+    go_root = go_mods[0].parent if is_go else root
+    module_path = run(["go", "list", "-m"], go_root).strip() if is_go else ""
+    symbols = go_symbols(go_root) if is_go else analyzer_symbols(root)
     ext = ".go" if is_go else (".py" if (root / "pyproject.toml").exists() else ".ts" if (root / "tsconfig.json").exists() else ".js")
 
     missing = [s for s in symbols if not is_covered(s, docs, module_path)]

@@ -14,7 +14,7 @@
 
 ***
 
-> An agent skill with bilingual static docs sites, built-in SEO/AEO optimization, and GitHub release history
+> An agent skill with bilingual docs site generation, API coverage tracking, and GitHub release history
 
 ## Table of Contents
 
@@ -27,10 +27,10 @@
 > `/wiki-generate` · [Documentation](./doc/doc.md)
 
 - **Deployable Bilingual Docs Site** — Each topic becomes an English and Chinese markdown pair that the bundled `build.js` compiles into static HTML with sidebar, TOC, and sitemap, ready for Cloudflare Workers.
-- **SEO/AEO in Every Run** — Researches current practice first, then produces titles, descriptions, a JSON-LD entity graph, hreflang, and llms.txt, and verifies every page before writing a report.
+- **Paired with /seo-optimize** — The template emits JSON-LD, hreflang, llms.txt, and other SEO outputs, while research and optimization go to `/seo-optimize`; if it is missing, the skill offers to download it and otherwise falls back to basic rules.
+- **API Coverage and Removal Records** — `check_coverage.py` finds public symbols the docs never mention and walks tags to mark the version each removed symbol disappeared in.
 - **Full-File Reads Before Writing** — The analyzer only indexes which files to read; every page requires reading its source and `CLAUDE.md` in full, so docs capture branches and edge cases rather than bare signatures.
 - **README Home and Release History** — The home page mirrors the project README verbatim and version history syncs straight from GitHub Releases, so neither is written by hand.
-- **Selective Regeneration** — `--only` refreshes the named pages without reading or writing any others, and `--pages` customizes the page set on the first run.
 
 ## Architecture
 
@@ -41,12 +41,13 @@ graph TB
     User[User] -->|/wiki-generate| SKILL[SKILL.md<br/>Orchestration]
     SKILL --> Analyze[analyze_project.py<br/>Symbol Index]
     SKILL --> Source[Source / CLAUDE.md / README<br/>Full Reads]
-    SKILL --> SEO[scripts/seo<br/>Research and Rules]
+    SKILL --> Coverage[check_coverage.py<br/>API Coverage]
     Analyze --> Pages[pages/slug.md + slug.zh.md]
     Source --> Pages
-    SEO --> Build[build.js Template]
-    Pages --> Build
+    Coverage --> Pages
+    Pages --> Build[build.js Template]
     Build --> Site[wiki-worker/public<br/>HTML / sitemap / llms.txt]
+    Site --> SEO["/seo-optimize<br/>Research and Optimization"]
 ```
 
 ## License

@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { marked } = require("marked");
 
-const TEMPLATE_VERSION = "1.14.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "1.14.2"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
@@ -510,7 +510,7 @@ for (const slug of allSlugs) {
   const md = fs.readFileSync(mdPath, "utf-8");
   let html = marked.parse(md);
   html = renderDemos(renderMermaid(wrapTables(addHeadingIds(html))));
-  if (slug === "home") html = ensureH1(html, SITE_NAME);
+  if (slug === "home") html = ensureH1(html, REPO);
 
   const label = NAV.flatMap(g => g.items).find(i => i.slug === slug)?.label || slug;
   const desc = DESCRIPTIONS[slug] || `${label} — ${SITE_NAME} documentation.`;
@@ -534,7 +534,7 @@ for (const slug of allSlugs) {
   const zhMdPath = path.join(PAGES_DIR, `${slug}.zh.md`);
   if (fs.existsSync(zhMdPath)) {
     let zhHtml = renderDemos(renderMermaid(wrapTables(addHeadingIds(marked.parse(fs.readFileSync(zhMdPath, "utf-8"))))), "zh");
-    if (slug === "home") zhHtml = ensureH1(zhHtml, SITE_NAME);
+    if (slug === "home") zhHtml = ensureH1(zhHtml, REPO);
     const zhLabel = NAV_ZH_LABEL[slug] || label;
     const zhDesc = DESCRIPTIONS_ZH[slug] || desc;
     const zhSidebar = buildSidebar(slug, "zh");
