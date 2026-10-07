@@ -48,6 +48,7 @@ class ProjectAnalysis:
 
 IGNORE_DIRS = {
     ".git",
+    "wiki-worker",
     "node_modules",
     "vendor",
     ".idea",
@@ -112,9 +113,10 @@ PY_DEP_BLOCK_RE = re.compile(r"dependencies\s*=\s*\[([^\]]*)\]", re.DOTALL)
 PY_DEP_RE = re.compile(r'["\']([^"\'<>=!~;\s]+)')
 
 JS_EXPORT_FUNC_RE = re.compile(
-    r"export\s+(?:async\s+)?function\s+(\w+)\s*(?:<[^>]+>)?\s*\(([^)]*)\)"
+    r"export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*(?:<[^>]+>)?\s*\(([^)]*)\)"
 )
 JS_EXPORT_CLASS_RE = re.compile(r"export\s+class\s+(\w+)")
+JS_EXPORT_NAMED_RE = re.compile(r"export\s+(?:default\s+(\w+)\s*;|\{([^}]*)\})")
 JS_WINDOW_EXPORT_RE = re.compile(r"^((?:window\.[\w$]+\s*=\s*)+)(\w+)\s*;?\s*$", re.MULTILINE)
 
 
@@ -142,7 +144,7 @@ def _detect_by_indicators(root: Path) -> str | None:
 def _detect_by_extensions(root: Path) -> str:
     ext_count: dict[str, int] = {}
     for f in root.rglob("*"):
-        if not f.is_file():
+        if not f.is_file() or any(p in f.parts for p in IGNORE_DIRS):
             continue
         lang = EXT_LANGUAGE_MAP.get(f.suffix)
         if lang is None:
@@ -474,6 +476,13 @@ def _scan_script_symbols(
         for chain, local in JS_WINDOW_EXPORT_RE.findall(content)
         for public in re.findall(r"window\.([\w$]+)", chain)
     ]
+    named = {t.name for t in types}
+    for default, group in JS_EXPORT_NAMED_RE.findall(content):
+        pairs = [(default, default)] if default else [(n.split(" as ")[0].strip(), n.split(" as ")[-1].strip()) for n in group.split(",")]
+        for local, public in pairs:
+            if public and public not in named and re.search(rf"\bclass\s+{re.escape(local)}\b", content):
+                named.add(public)
+                types.append(TypeInfo(name=public, kind="class", file=rel_path))
     for public, local in exports:
         if re.search(rf"\bclass\s+{re.escape(local)}\b", content):
             types.append(TypeInfo(name=public, kind="class", file=rel_path))

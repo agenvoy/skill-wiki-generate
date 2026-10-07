@@ -87,7 +87,6 @@ python3 {skill_dir}/scripts/setup_config.py write \
 | `site_name`                                      | 文件站顯示名稱（`<title>` 品牌段、JSON-LD `name`、署名列、llms.txt 標題）。**套件／函式庫／CLI 一律用 `{owner}/{repo}`**（如 `pardnchiu/go-bot`）；只有具獨立品牌名的產品（Agenvoy、ToriiDB、KuraDB）才用品牌名本身 | `{owner}/{repo}`                                                                                                                                                                                                       |
 | `domain`                                         | 正式部署網域（`https://example.com`，用於 canonical / sitemap / llms.txt，不含結尾斜線）                                                                                                                            | 從 `wrangler.toml` routes、GitHub repo homepage 推得；推不出就問，**不得填佔位網域**                                                                                                                                   |
 | `gtag_id`                                        | Google Analytics 量測 ID，留空則不注入                                                                                                                                                                              | 空字串                                                                                                                                                                                                                 |
-| `author_name_zh`                                 | ZH 頁 title 尾端的作者名                                                                                                                                                                                            | `author_name` 中的中文部分；無中文則同 `author_name`                                                                                                                                                                   |
 | `person_id` / `person_name` / `person_alt_names` | JSON-LD Person 節點                                                                                                                                                                                                 | 先抓 `author_url` 頁面的 JSON-LD：已宣告 Person 就**沿用其 `@id` 與 `name`**（跨站實體歸戶）；沒有則 `@id = {author_url}#person`、`name = author_name`                                                                 |
 | `same_as`                                        | Person `sameAs` 與署名列外部連結                                                                                                                                                                                    | **以 `~/.skill-readme-generate.json` 的 `same_as` 為必含清單，逐項全數放入、不得刪減**（使用者 2026-10-02 指定，含作者網站本身）；專案可再加，組織帳號另放 `org_same_as`。共用設定缺 `same_as` 時詢問使用者並寫回該檔  |
 | `org_name` / `org_name_zh`                       | Organization 節點與署名列組織段，EN／ZH 頁各用自己語言的正式名稱（另一語言進 `alternateName`）；**逐字採用使用者寫法**（含標點）                                                                                    | 空字串＝無組織，不產生 Organization                                                                                                                                                                                    |
@@ -353,7 +352,6 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
    | `{{DOMAIN}}`                        | Step 0.3 `domain`                                                                                                                                                |
    | `{{REPO}}`                          | `{owner}/{repo}`（Step 0.4 推導）                                                                                                                                |
    | `{{AUTHOR_NAME}}`                   | `~/.skill-readme-generate.json` `author_name`                                                                                                                    |
-   | `{{AUTHOR_NAME_ZH}}`                | Step 0.3 `author_name_zh`                                                                                                                                        |
    | `{{AUTHOR_URL}}`                    | `~/.skill-readme-generate.json` `author_url`                                                                                                                     |
    | `{{AUTHOR_HANDLE}}`                 | `~/.skill-readme-generate.json` `github_owner`（作者帳號；repo 在組織底下時與 `{{REPO}}` 的 owner 不同）                                                         |
    | `{{GTAG_ID}}`                       | Step 0.3 `gtag_id`（留空則保持空字串）                                                                                                                           |
@@ -484,6 +482,8 @@ cd <project_root>/wiki-worker && node build.js
 ### 轉寫規則
 
 - **README 全文逐字原樣複製**到 `home.md`／`home.zh.md`，不摘要、不改寫、不刪減任何區段（含徽章列、`<p align="center">`、Star history）；章節順序與標題層級與 README 完全一致
+- 例外一：README 的已知限制區段（`Known Limitations`／`Limitations`／`Caveats`／`已知限制`／`限制` 等）整段不複製，見 Step 5「不寫已知限制」
+- 例外二：README 開頭的最後更新日期行（`Last updated: ...`／`最後更新：...`）不複製——頁面日期由 `build.js` 依內容雜湊產生並顯示於 h1 下方，與 JSON-LD、sitemap `lastmod` 同值；複製進來會出現兩個可能不一致的日期，且日期行變動會讓內容雜湊變動
 - README 內引用的本地圖片檔（如 `logo.svg`、`logo.png`、`doc/logo.svg`、`doc/logo.png` 等相對路徑圖片）**原樣複製檔案**到 `wiki-worker/public/assets/`（保留原檔名，去除 `doc/` 等來源前綴），並將 md 內對應的圖片路徑改寫為 `/assets/<檔名>`
 - README 內的相對連結（如 `./doc/architecture.md`、`#features`）若指向 repo 內檔案，改寫成指向 GitHub blob 的絕對 URL（`https://github.com/{owner}/{repo}/blob/master/...`）；指向本文件內章節的錨點連結（`#section`）維持相對，因為 build.js 會用同一套 `slugify()` 產生 heading id
 - 其餘內容（安裝步驟、功能說明、架構圖、授權）逐字保留，不精簡
@@ -506,6 +506,7 @@ cd <project_root>/wiki-worker && node build.js
 - **不**在 md 內放跨語言連結 blockquote —— build.js 已在頁面右下角渲染 `lang-fab` 語言切換浮動按鈕，md 內容本身純粹是該語言版本的內容
 - **不**放生成標注 —— 文件站無需每頁重複「本文件由 SKILL 生成」；如需標注放進 repo 的 `README.md`
 - **不**放徽章列 / Star history / Author 區段 / 版權 footer —— 這些屬 landing page（`wiki-worker/public/index.html`）或 `README.md`，不屬文件內容
+- **不寫已知限制**：不開 `Known Limitations`／`Limitations`／`Caveats`／`已知限制`／`注意事項` 等段落，也不在其他段落以「目前不支援／尚未實作／限制」列舉缺陷。行為本身的邊界（參數合法範圍、錯誤時回傳什麼）照常寫在對應功能說明裡 —— 使用者指定文件站只描述系統能做什麼
 
 ### Step 5.1：前端套件的即時範例（強制）
 
@@ -627,21 +628,21 @@ Step 3.3 編譯完成後執行 `/seo-optimize <project_root>`（傳專案根，c
 | `HOME_TITLE`／`HOME_TITLE_ZH`         | 含實讀原始碼得出的產品關鍵字；EN ≤ 60 字元、ZH ≤ 30 字；各語言自行撰寫；作者名只出現一次                                                 |
 | `DESCRIPTIONS`／`DESCRIPTIONS_ZH`     | 每頁一句，描述該頁實際內容；EN ≤ 160 字元、ZH ≤ 80 字；全站不重複、不用樣板句；首頁含產品類別與作者名                                    |
 | `KEYWORDS`／`KEYWORDS_ZH`             | 取自該頁實際出現的主題詞                                                                                                                 |
-| 品牌詞（人名、帳號、組織名）          | 只放署名列、JSON-LD、首頁 description、llms.txt；每頁 title 只帶作者名一次                                                               |
+| 品牌詞（人名、帳號、組織名）          | 只放署名列、JSON-LD、首頁 description、llms.txt；人名入 title 僅限首頁                                                               |
 | `AI_TRAIN`／`AI_INPUT`／`AI_SEARCH`   | 取 `<project_root>/.doc/seo-optimize/config.json` 的 `ai_usage`；沒有則詢問使用者一次並寫入 `wiki-worker/.doc/seo/config.json`，不得代填 |
 
 ### Step 8.4：範本內建的 SEO 輸出
 
 | 項目                  | 產出                                                                                                                                        | 行為                                                                                                                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Title                 | `HOME_TITLE`／`HOME_TITLE_ZH`；其餘頁由範本組成 `{label} - {SITE_NAME} Docs - {AUTHOR_NAME}`／`{label}｜{SITE_NAME} 文件｜{AUTHOR_NAME_ZH}` | —                                                                                                                                                                                                          |
+| Title                 | `HOME_TITLE`／`HOME_TITLE_ZH`；其餘頁由範本組成 `{label} - {SITE_NAME} Docs`／`{label}｜{SITE_NAME} 文件`（人名只放首頁 title） | —                                                                                                                                                                                                          |
 | Description           | `DESCRIPTIONS`／`DESCRIPTIONS_ZH`                                                                                                           | 版本頁由 `releaseDescription()` 取各自 `## Summary`                                                                                                                                                        |
 | canonical／hreflang   | 範本內建                                                                                                                                    | `en` + `zh-Hant-TW` 兩條 alternate；`X_DEFAULT` 有值時另輸出 `x-default`，預設空字串不輸出；版本頁無 alternate                                                                                             |
 | Favicon               | `public/favicon.png`＋`FAVICON`                                                                                                             | 為空時不輸出 `<link rel="icon">`，並在回應列「需提供 favicon」                                                                                                                                             |
 | OG／Twitter           | 範本內建                                                                                                                                    | 首頁 `og:type website`、其餘 `article`；`OG_IMAGE` 為空時 `twitter:card summary` 且不輸出圖片 meta，並在回應列「需提供 OG 圖」                                                                             |
 | h1                    | 主題頁 md 以 `# ` 開頭；首頁與版本頁由 `ensureH1()` 補                                                                                      | 每頁恰一個 h1                                                                                                                                                                                              |
 | JSON-LD               | 範本內建 `@graph`                                                                                                                           | Person ＋ Organization（有 `ORG_NAME` 才有）＋ WebSite ＋ 首頁 `SoftwareSourceCode`／其餘 `TechArticle`                                                                                                    |
-| 日期                  | 範本內建 `stampDates()`＋`public/docs/dates.json`                                                                                           | 內容 SHA-256 變了才更新 `dateModified`；署名列、JSON-LD、sitemap `lastmod` 同一值；版本頁用 release 日期                                                                                                   |
+| 日期                  | 範本內建 `stampDates()`＋`public/docs/dates.json`                                                                                           | 內容 SHA-256 變了才更新 `dateModified`；h1 下方 `.page-date`（`Last updated`／`最後更新`，版本頁 `Released`）、JSON-LD、sitemap `lastmod` 同一值；版本頁用 release 日期                                                                                                   |
 | Organization          | `ORG_NAME`／`ORG_NAME_ZH`／`ORG_SAME_AS`                                                                                                    | 只填實際存在的組織；定位文字放 `TAGLINE`                                                                                                                                                                   |
 | 索引提交              | `indexnow.js`＋`npm run deploy`                                                                                                             | 部署後只送 `lastmod` 有變的 URL；首次生成時先徵得使用者同意才接進 deploy                                                                                                                                   |
 | robots.txt／sitemap   | 範本內建                                                                                                                                    | `User-agent: *` / `Allow: /` ＋ `Sitemap:`；sitemap 含所有 EN／ZH／版本頁                                                                                                                                  |
@@ -657,7 +658,7 @@ Step 3.3 編譯完成後執行 `/seo-optimize <project_root>`（傳專案根，c
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | h1                      | 每頁恰 1 個                                                                                                                                                                  |
 | JSON-LD                 | 可解析，含 Person／WebSite（有組織時含 Organization），首頁為 `SoftwareSourceCode`                                                                                           |
-| 日期                    | 每個文件頁 JSON-LD 有 `datePublished`／`dateModified`，署名列有相同日期的 `<time>`；連續編譯兩次 `dates.json` 不變                                                           |
+| 日期                    | 每個文件頁 JSON-LD 有 `datePublished`／`dateModified`，h1 後緊接 `class="page-date"` 且其 `<time>` 與 `dateModified`、sitemap 該 URL 的 `lastmod` 相同；連續編譯兩次 `dates.json` 不變                                                           |
 | 實體                    | Person `sameAs` 包含共用設定 `same_as` 的每一項                                                                                                                              |
 | 署名列                  | 每頁有 `class="byline"`                                                                                                                                                      |
 | Twitter／OG             | 每頁有 `twitter:card`；`OG_IMAGE` 非空時有 `og:image`                                                                                                                        |
@@ -719,7 +720,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 - [ ] 章節結構與對向語言版本對齊
 - [ ] 程式碼區塊指定語言識別碼
 - [ ] 前端套件：可在瀏覽器執行的使用範例皆為 ` ```demo `，且每個都已在 headless Chrome 實跑過、log 與文件描述一致
-- [ ] **無** 徽章 / star history / author 區段 / 版權 footer / 生成標注
+- [ ] **無** 徽章 / star history / author 區段 / 版權 footer / 生成標注 / 已知限制段落
 
 ### SEO / AEO（Step 8）
 

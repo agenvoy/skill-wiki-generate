@@ -3,14 +3,13 @@ const crypto = require("crypto");
 const path = require("path");
 const { marked } = require("marked");
 
-const TEMPLATE_VERSION = "1.14.2"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "3.0.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
 const DOMAIN = "{{DOMAIN}}";
 const REPO = "{{REPO}}"; // owner/repo
 const AUTHOR_NAME = "{{AUTHOR_NAME}}";
-const AUTHOR_NAME_ZH = "{{AUTHOR_NAME_ZH}}";
 const AUTHOR_URL = "{{AUTHOR_URL}}";
 const AUTHOR_HANDLE = "{{AUTHOR_HANDLE}}";
 const GTAG_ID = "{{GTAG_ID}}"; // empty string disables analytics
@@ -280,13 +279,8 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     fullTitle = isZh ? HOME_TITLE_ZH : HOME_TITLE;
   } else {
     fullTitle = isZh
-      ? `${title}｜${SITE_NAME} 文件｜${AUTHOR_NAME_ZH}`
-      : `${title} - ${SITE_NAME} Docs - ${AUTHOR_NAME}`;
-    if (titleTooLong(fullTitle, isZh)) {
-      fullTitle = isZh
-        ? `${title}｜${SITE_NAME}｜${AUTHOR_NAME_ZH}`
-        : `${title} - ${SITE_NAME} - ${AUTHOR_NAME}`;
-    }
+      ? `${title}｜${SITE_NAME} 文件`
+      : `${title} - ${SITE_NAME} Docs`;
     if (titleTooLong(fullTitle, isZh)) {
       fullTitle = isZh ? `${title}｜${SITE_NAME}` : `${title} - ${SITE_NAME}`;
     }
@@ -372,13 +366,14 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
 
   const orgSegment = ORG_NAME ? ` · ${orgName}` : "";
   const dateLabel = slug.startsWith("released/") ? "Released" : (isZh ? "最後更新" : "Last updated");
-  const dateSegment = dates ? ` · ${dateLabel} <time datetime="${dates.modified}">${dates.modified}</time>` : "";
+  const dateLine = dates ? `<p class="page-date">${dateLabel} <time datetime="${dates.modified}">${dates.modified}</time></p>` : "";
+  const body = dateLine ? content.replace("</h1>", `</h1>\n${dateLine}`) : content;
   const taglineSegment = TAGLINE ? ` · ${TAGLINE}` : "";
   const handleLink = `<a href="https://github.com/${AUTHOR_HANDLE}" target="_blank" rel="noopener">${AUTHOR_HANDLE}</a>`;
   const agentLinks = ` · <a href="/llms.txt">llms.txt</a> · <a href="${markdownHref(slug, isZh)}" type="text/markdown">${isZh ? "本頁 Markdown" : "Markdown"}</a>`;
   const byline = isZh
-    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${handleLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`
-    : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${handleLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${dateSegment}${agentLinks}</footer>`;
+    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${handleLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`
+    : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${handleLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`;
 
   const ogImage = OG_IMAGE
     ? `
@@ -444,7 +439,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     </header>
     <div class="layout">
       <nav class="sidebar">${sidebar}</nav>
-      <main class="content">${content}${byline}</main>
+      <main class="content">${body}${byline}</main>
       <aside class="toc">${toc}</aside>
     </div>
     <script>
@@ -560,8 +555,11 @@ if (TAGS.length) {
   fs.mkdirSync(RELEASED_DIR, { recursive: true });
 
   for (const tag of TAGS) {
-    const md = fs.readFileSync(path.join(TAGS_DIR, `${tag}.md`), "utf-8");
-    const html = ensureH1(renderMermaid(wrapTables(addHeadingIds(marked.parse(md)))), `${tag} Release Notes`);
+    const raw = fs.readFileSync(path.join(TAGS_DIR, `${tag}.md`), "utf-8");
+    const heading = `# ${tag} Release Notes`;
+    const h1 = marked.lexer(raw).find(t => t.type === "heading" && t.depth === 1);
+    const md = `${heading}\n\n${h1 ? raw.replace(h1.raw, "") : raw}`;
+    const html = renderMermaid(wrapTables(addHeadingIds(marked.parse(md))));
     const sidebar = buildVersionSidebar(tag, TAGS, TAG_DATES);
     const toc = buildTOC(html);
     const desc = releaseDescription(md, tag);

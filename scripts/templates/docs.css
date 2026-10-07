@@ -67,4 +67,5 @@ code,.mono{font-family:"JetBrains Mono",monospace}
 
 .content .table-scroll{overflow-x:auto;max-width:100%;margin-bottom:16px;-webkit-overflow-scrolling:touch}
 .content .table-scroll>table{width:max-content;min-width:100%;margin-bottom:0}
+.content .page-date{margin:-4px 0 24px;font-size:13px;color:var(--muted)}
 .content .byline{margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)}

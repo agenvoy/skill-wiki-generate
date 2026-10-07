@@ -203,7 +203,8 @@ def main() -> int:
     go_root = go_mods[0].parent if is_go else root
     module_path = run(["go", "list", "-m"], go_root).strip() if is_go else ""
     symbols = go_symbols(go_root) if is_go else analyzer_symbols(root)
-    ext = ".go" if is_go else (".py" if (root / "pyproject.toml").exists() else ".ts" if (root / "tsconfig.json").exists() else ".js")
+    has_tsconfig = any(not {"node_modules", ".git", "vendor", "wiki-worker"} & set(t.relative_to(root).parts) for t in root.rglob("tsconfig.json"))
+    ext = ".go" if is_go else (".py" if (root / "pyproject.toml").exists() else ".ts" if has_tsconfig else ".js")
 
     missing = [s for s in symbols if not is_covered(s, docs, module_path)]
 
@@ -220,6 +221,7 @@ def main() -> int:
 
     words = code_words(root, ext)
     if ext in {".js", ".ts"}:
+        words |= code_words(root, ".js" if ext == ".ts" else ".ts")
         words.update(run(["node", "-e", "console.log(Object.getOwnPropertyNames(globalThis).join(' '))"], root).split())
     removed = []
     for token, where in sorted(doc_identifiers(pages, foreign_qualifier).items()):
