@@ -2,7 +2,7 @@
   const tag = document.querySelector("script[data-demo]");
   const CDN = tag.src;
   const attrs = [...tag.attributes]
-    .filter((a) => !["src", "data-demo", "data-demo-ignore", "defer"].includes(a.name))
+    .filter((a) => !["src", "data-demo", "data-demo-ignore", "data-nanomd-css", "defer"].includes(a.name))
     .map((a) => ` ${a.name}="${a.value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`)
     .join("");
 
@@ -15,7 +15,7 @@
     `console.log=print;console.error=print;addEventListener("error",e=>print(e.message));addEventListener("unhandledrejection",e=>print(String(e.reason)));`;
 
   for (const e of document.querySelectorAll(".demo")) {
-    const code = e.querySelector("code").textContent.replace(/<script[^>]*src="[^"]*cdn\.jsdelivr\.net[^"]*"[^>]*><\/script>\s*/g, "");
+    const code = [...e.querySelectorAll("code li")].map((l) => l.textContent).join("\n").replace(/<script[^>]*src="[^"]*cdn\.jsdelivr\.net[^"]*"[^>]*><\/script>\s*/g, "");
     const frame = e.querySelector("iframe");
     frame.addEventListener("load", () => {
       const win = frame.contentWindow;

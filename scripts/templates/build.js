@@ -1,9 +1,9 @@
 const fs = require("fs");
 const crypto = require("crypto");
 const path = require("path");
-const { marked } = require("marked");
+const { Parse } = require("@pardnchiu/nanomd");
 
-const TEMPLATE_VERSION = "3.0.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "5.0.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
@@ -52,6 +52,22 @@ const X_DEFAULT = "{{X_DEFAULT}}";
 const BRAND_KEYWORDS = [
   // {{BRAND_KEYWORDS}}
 ];
+
+const NANOMD_DIR = path.join(__dirname, "nanomd");
+for (const f of ["version.json", "parser.css"]) {
+  if (!fs.existsSync(path.join(NANOMD_DIR, f))) {
+    console.error(`[Not found] nanomd/${f}: run node sync-nanomd.js`);
+    process.exit(1);
+  }
+}
+const NANOMD_VERSION = JSON.parse(fs.readFileSync(path.join(NANOMD_DIR, "version.json"), "utf-8")).version;
+const NANOMD_CSS = fs.readFileSync(path.join(NANOMD_DIR, "parser.css"), "utf-8").trim();
+const NANOMD_INSTALLED = JSON.parse(fs.readFileSync(path.join(path.dirname(require.resolve("@pardnchiu/nanomd")), "../package.json"), "utf-8")).version;
+if (NANOMD_INSTALLED !== NANOMD_VERSION) {
+  console.error(`[Conflict] @pardnchiu/nanomd: installed ${NANOMD_INSTALLED}, nanomd/version.json ${NANOMD_VERSION}; run node sync-nanomd.js ${NANOMD_VERSION}`);
+  process.exit(1);
+}
+const NANOMD_SCRIPT = `https://cdn.jsdelivr.net/npm/@pardnchiu/nanomd@${NANOMD_VERSION}/dist/parser.js`;
 
 const PAGES_DIR = path.join(__dirname, "public/docs/pages");
 const OUT_DIR = path.join(__dirname, "public");
@@ -208,34 +224,45 @@ function buildTOC(html, lang = "en") {
 }
 
 function addHeadingIds(html) {
-  return html.replace(/<h([1-4])>(.*?)<\/h\1>/g, (match, level, text) => {
+  return html.replace(/<h([1-4])( class="[^"]*")?>(.*?)<\/h\1>/g, (match, level, cls = "", text) => {
     const id = slugify(text.replace(/<[^>]+>/g, ""));
-    return `<h${level} id="${id}">${text}</h${level}>`;
+    return `<h${level}${cls} id="${id}">${text}</h${level}>`;
   });
 }
 
-// wrap every table so it scrolls horizontally instead of overflowing the viewport
-function wrapTables(html) {
-  return html
-    .replace(/<table>/g, '<div class="table-scroll"><table>')
-    .replace(/<\/table>/g, "</table></div>");
+function renderMarkdown(md) {
+  const ast = Parse(md);
+  const html = ast.map((node, i) => {
+    const block = ast.slice(i, i + 1).html();
+    return node.type === "heading" ? block.replace(/^<span class="md-h(\d)">([\s\S]*)<\/span>$/, '<h$1 class="md-h$1">$2</h$1>') : block;
+  }).join("");
+  return html.replace(/(<a href="(?:#|\/(?!\/))[^"]*"[^>]*?) target="_blank" rel="noopener"/g, "$1");
+}
+
+function stripH1(raw) {
+  const lines = raw.split("\n");
+  let fence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*(`{3,}|~{3,})/.test(lines[i])) fence = !fence;
+    else if (!fence && /^# /.test(lines[i])) {
+      lines.splice(i, 1);
+      return lines.join("\n");
+    }
+  }
+  return raw;
 }
 
 function renderDemos(html, lang = "en") {
   if (!DEMO_SCRIPT) return html;
   const label = lang === "zh" ? "即時預覽" : "Live preview";
   const pkg = DEMO_SCRIPT.match(/\/npm\/((?:@[^/]+\/)?[^/]+)/)?.[1] || "";
-  return html.replace(/<pre><code class="language-demo">([\s\S]*?)<\/code><\/pre>/g,
-    `<div class="demo"><pre><code class="language-html">$1</code></pre><div class="demo-bar">${label}${pkg ? ` · ${pkg}` : ""}</div><iframe title="${label}"></iframe></div>`);
-}
-
-function renderMermaid(html) {
-  return html.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<pre class="mermaid">$1</pre>');
+  return html.replace(/<pre class="prettyprint" name="demo"><code name="demo">([\s\S]*?)<\/code><button class="copy"><\/button><\/pre>/g,
+    `<div class="demo"><pre class="prettyprint" name="html"><code class="language-html" name="html">$1</code><button class="copy"></button></pre><div class="demo-bar">${label}${pkg ? ` · ${pkg}` : ""}</div><iframe title="${label}"></iframe></div>`);
 }
 
 function ensureH1(html, text) {
   if (html.includes("<h1")) return html;
-  return `<h1 id="${slugify(text)}">${text}</h1>\n${html}`;
+  return `<h1 class="md-h1" id="${slugify(text)}">${text}</h1>\n${html}`;
 }
 
 function markdownHref(slug, isZh) {
@@ -425,7 +452,9 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/docs.css" />
-    ${DEMO_SCRIPT ? `<script src="${DEMO_SCRIPT}"${Object.entries(DEMO_SCRIPT_ATTRS).map(([k, v]) => ` ${k}="${v}"`).join("")}${DEMO_LOG_IGNORE.length ? ` data-demo-ignore='${JSON.stringify(DEMO_LOG_IGNORE).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'` : ""} data-demo defer></script>
+    <style>${NANOMD_CSS}</style>
+    ${DEMO_SCRIPT ? `<script src="${DEMO_SCRIPT}"${Object.entries(DEMO_SCRIPT_ATTRS).map(([k, v]) => ` ${k}="${v}"`).join("")}${DEMO_LOG_IGNORE.length ? ` data-demo-ignore='${JSON.stringify(DEMO_LOG_IGNORE).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'` : ""}${DEMO_SCRIPT === NANOMD_SCRIPT ? ' data-nanomd-css="off"' : ""} data-demo defer></script>
+    ` : ""}${NANOMD_SCRIPT !== DEMO_SCRIPT ? `<script src="${NANOMD_SCRIPT}" data-nanomd-css="off" defer></script>
     ` : ""}  </head>
   <body>
     <header class="header">
@@ -439,7 +468,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     </header>
     <div class="layout">
       <nav class="sidebar">${sidebar}</nav>
-      <main class="content">${body}${byline}</main>
+      <main class="content"><div class="nanomd" data-mode="light">${body}</div>${byline}</main>
       <aside class="toc">${toc}</aside>
     </div>
     <script>
@@ -464,7 +493,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       document.querySelectorAll('.content h2,.content h3').forEach(function(h){tocObs.observe(h)});
     </script>
     ${content.includes('class="demo"') ? `<script src="/demo.js" defer></script>` : ""}
-    ${content.includes('<pre class="mermaid">') ? `<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:"neutral",securityLevel:"strict"});</script>` : ""}
+    <script>addEventListener("DOMContentLoaded",function(){MDParser.Init({enable:${JSON.stringify({ highlight: content.includes('class="prettyprint"'), mermaid: content.includes('class="md-mermaid"'), latex: /class="md-math(-inline)?"/.test(content), chartjs: content.includes('class="md-chart"') })}}).then(function(){return MDParser.Refresh(document.querySelector(".content>.nanomd"))}).catch(function(e){console.error(e.message)})})</script>
     ${isReleased ? "" : `<a href="${altHref}" class="lang-fab" aria-label="${isZh ? "Switch to English" : "Switch to Chinese"}" hreflang="${isZh ? "en" : ZH_LANG}"><i class="fa-solid fa-language"></i><span>${isZh ? "EN" : "中文"}</span></a>`}
   </body>
 </html>`;
@@ -481,8 +510,6 @@ function releaseDescription(md, tag) {
   if (sentence > 60) return cut.slice(0, sentence + 1);
   return `${cut.slice(0, cut.lastIndexOf(" "))}...`;
 }
-
-marked.setOptions({ gfm: true, breaks: false });
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.mkdirSync(ZH_DIR, { recursive: true });
@@ -503,8 +530,7 @@ for (const slug of allSlugs) {
   }
 
   const md = fs.readFileSync(mdPath, "utf-8");
-  let html = marked.parse(md);
-  html = renderDemos(renderMermaid(wrapTables(addHeadingIds(html))));
+  let html = renderDemos(addHeadingIds(renderMarkdown(md)));
   if (slug === "home") html = ensureH1(html, REPO);
 
   const label = NAV.flatMap(g => g.items).find(i => i.slug === slug)?.label || slug;
@@ -528,7 +554,7 @@ for (const slug of allSlugs) {
   // zh variant — generated only when a translated source exists
   const zhMdPath = path.join(PAGES_DIR, `${slug}.zh.md`);
   if (fs.existsSync(zhMdPath)) {
-    let zhHtml = renderDemos(renderMermaid(wrapTables(addHeadingIds(marked.parse(fs.readFileSync(zhMdPath, "utf-8"))))), "zh");
+    let zhHtml = renderDemos(addHeadingIds(renderMarkdown(fs.readFileSync(zhMdPath, "utf-8"))), "zh");
     if (slug === "home") zhHtml = ensureH1(zhHtml, REPO);
     const zhLabel = NAV_ZH_LABEL[slug] || label;
     const zhDesc = DESCRIPTIONS_ZH[slug] || desc;
@@ -557,9 +583,8 @@ if (TAGS.length) {
   for (const tag of TAGS) {
     const raw = fs.readFileSync(path.join(TAGS_DIR, `${tag}.md`), "utf-8");
     const heading = `# ${tag} Release Notes`;
-    const h1 = marked.lexer(raw).find(t => t.type === "heading" && t.depth === 1);
-    const md = `${heading}\n\n${h1 ? raw.replace(h1.raw, "") : raw}`;
-    const html = renderMermaid(wrapTables(addHeadingIds(marked.parse(md))));
+    const md = `${heading}\n\n${stripH1(raw)}`;
+    const html = addHeadingIds(renderMarkdown(md));
     const sidebar = buildVersionSidebar(tag, TAGS, TAG_DATES);
     const toc = buildTOC(html);
     const desc = releaseDescription(md, tag);
@@ -571,12 +596,12 @@ if (TAGS.length) {
     releaseTags.push(tag);
   }
 
-  let listHtml = `<h1>Release Notes</h1>\n<p>All ${SITE_NAME} releases.</p>\n`;
+  let listHtml = `<h1 class="md-h1">Release Notes</h1>\n<span class="md-line">All ${SITE_NAME} releases.</span>\n`;
   for (const [minor, versions] of groupByMinor(TAGS)) {
-    listHtml += `<h2>${minor}</h2>\n<ul>\n`;
+    listHtml += `<h2 class="md-h2">${minor}</h2>\n<ul class="md-list">\n`;
     for (const v of versions) {
       const date = TAG_DATES[v] ? ` <span style="color:var(--muted);font-size:13px">${TAG_DATES[v]}</span>` : "";
-      listHtml += `<li><a href="/released/${v}">${v}</a>${date}</li>\n`;
+      listHtml += `<li><a class="md-link" href="/released/${v}">${v}</a>${date}</li>\n`;
     }
     listHtml += `</ul>\n`;
   }

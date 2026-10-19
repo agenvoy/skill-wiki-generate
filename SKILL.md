@@ -283,6 +283,10 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
 <project_root>/wiki-worker/
 ├── build.js                              (md → html 編譯腳本；首次生成時從 skill 範本複製並客製化)
 ├── sync-tags.js                          (GitHub Releases → docs/tags/*.md；首次生成時從 skill 範本複製並客製化)
+├── sync-nanomd.js                        (記錄 NanoMD 版本並下載該版 parser.css；從 skill 範本複製，不客製)
+├── nanomd/
+│   ├── version.json                      (sync-nanomd.js 產出：本站使用的 NanoMD 版本，勿手動編輯)
+│   └── parser.css                        (sync-nanomd.js 產出：該版 parser.css，build.js 內嵌進每頁)
 ├── indexnow.js                           (部署後送出內容有變的 URL 至 IndexNow；從 skill 範本複製，不客製)
 ├── .indexnow-sent.json                   (indexnow.js 產出：每個 URL 已送出的 lastmod)
 ├── package.json                          (`{repo}-wiki`；首次生成時從 skill 範本複製)
@@ -342,6 +346,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
    cp {skill_dir}/scripts/templates/package.json <project_root>/wiki-worker/package.json
    cp {skill_dir}/scripts/templates/wrangler.toml <project_root>/wiki-worker/wrangler.toml
    cp {skill_dir}/scripts/templates/indexnow.js <project_root>/wiki-worker/indexnow.js
+   cp {skill_dir}/scripts/templates/sync-nanomd.js <project_root>/wiki-worker/sync-nanomd.js
    cp {skill_dir}/scripts/templates/demo.js <project_root>/wiki-worker/public/demo.js   # 僅前端套件（Step 5.1）
    ```
 2. 先讀取 `build.js`，確認下列 placeholder 仍存在；**僅替換存在且值不同的 placeholder**，改為實際值（Step 0.3 收集的欄位）。目標值已正確時不寫入：
@@ -379,7 +384,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
 
 3. 將 `NAV` / `DESCRIPTIONS` / `KEYWORDS` / `KEYWORDS_ZH`（選填，未列的 slug 沿用 `KEYWORDS`）/ `NAV_ZH_SECTION` / `NAV_ZH_LABEL` / `DESCRIPTIONS_ZH` 這幾個物件依 Step 2 推導的頁面集合填入實際內容（**不得留 `// {{NAV}}` 等佔位註解**）
 4. 將 `package.json` 與 `wrangler.toml` 內的 `{{REPO_NAME}}` 替換為 repo 名稱（lowercase，取 `{repo}` 的部分，不含 owner），使兩者 `name` 欄位皆為 `{repo}-wiki`
-5. 提示使用者於 `wiki-worker/` 下執行 `npm install`（安裝 `marked` 與 `wrangler`）
+5. 於 `wiki-worker/` 下執行 `npm install` 與 `node sync-nanomd.js`（記錄 NanoMD 最新版、下載該版 `parser.css`、以 `--save-exact` 安裝同版本）
 
 若 `wiki-worker/build.js` 已存在（非首次生成）：**每次都對齊最新範本**，不詢問使用者。
 
@@ -455,6 +460,17 @@ build.js 讀 `public/docs/tags/` 後自動產生：
 **tag 排序**：`semverSort` 依 `major.minor.patch` 數值降冪（`v` 前綴會被去掉，缺項視為 0），非三段式數字 tag 不保證排序正確。
 
 **何時重跑**：專案發新版後、或使用者要求刷新文件站時；`--only` 模式下不重跑（版本紀錄與頁面內容無關）。
+
+### Step 3.2.1：NanoMD 版本
+
+頁面內容由 `@pardnchiu/nanomd` 在 build 時解析，`<head>` 內嵌同版本的 `parser.css`，載入同版本 `parser.js` 後執行 `Refresh()`；三者版本由 `nanomd/version.json` 決定。
+
+| 時機                                    | 動作                                                                                                                                                     |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 首次生成、NanoMD 發新版、使用者要求換版 | `node sync-nanomd.js [x.y.z]`（不帶版號取 npm 最新版）：下載該版 `parser.css` 取代 `nanomd/parser.css`、寫入 `nanomd/version.json`、`npm install` 同版本 |
+| build                                   | 已安裝版本與 `nanomd/version.json` 不符 → `[Conflict]` 中止；缺 `nanomd/*` → `[Not found]` 中止                                                          |
+
+**為何：** 靜態 HTML、內嵌 CSS 與執行期 `parser.js` 任一版本不同，後載入的規則會蓋掉前面的，畫面與文件描述對不上（NanoMD 2026-10-20：內嵌新版 CSS 被 CDN 舊版 `parser.css` 蓋回，圖片又被撐滿寬度）。
 
 ### Step 3.3：編譯
 
@@ -586,34 +602,34 @@ cd <project_root>/wiki-worker && node build.js
 
 ### Step 8.1：偵測 `/seo-optimize`
 
-| 狀態                                                                                  | 動作                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 可用 skill 清單含 `seo-optimize`，或 `{skill_dir}/../seo-optimize/SKILL.md` 存在       | Step 8.2                                                                                                                                                                     |
-| 不存在                                                                                | 以 `AskUserQuestion` 詢問是否下載 `https://github.com/agenvoy/skill-seo-optimize`；同意 → `git clone --depth 1 https://github.com/agenvoy/skill-seo-optimize {skill_dir}/../seo-optimize` 後 Step 8.2 |
-| 使用者否決，或 clone 失敗                                                             | Step 8.3，並在回應註明「本次未經 `/seo-optimize`，依基本方式完成」                                                                                                           |
-| `--only` 模式                                                                         | 不呼叫 `/seo-optimize`；重生的頁面依 Step 8.3 基本方式填值，仍執行 Step 8.5 檢查                                                                                            |
+| 狀態                                                                             | 動作                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 可用 skill 清單含 `seo-optimize`，或 `{skill_dir}/../seo-optimize/SKILL.md` 存在 | Step 8.2                                                                                                                                                                                              |
+| 不存在                                                                           | 以 `AskUserQuestion` 詢問是否下載 `https://github.com/agenvoy/skill-seo-optimize`；同意 → `git clone --depth 1 https://github.com/agenvoy/skill-seo-optimize {skill_dir}/../seo-optimize` 後 Step 8.2 |
+| 使用者否決，或 clone 失敗                                                        | Step 8.3，並在回應註明「本次未經 `/seo-optimize`，依基本方式完成」                                                                                                                                    |
+| `--only` 模式                                                                    | 不呼叫 `/seo-optimize`；重生的頁面依 Step 8.3 基本方式填值，仍執行 Step 8.5 檢查                                                                                                                      |
 
 ### Step 8.2：呼叫 `/seo-optimize`
 
 Step 3.3 編譯完成後執行 `/seo-optimize <project_root>`（傳專案根，config 位於 `<project_root>/.doc/seo-optimize/config.json`）。檢查範圍：
 
-| 面向 | 條件 |
-|---|---|
-| `wiki-worker/` 文件站（頁面層、爬蟲指令、實體） | 永遠 |
+| 面向                                                               | 條件                                                                                                                        |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `wiki-worker/` 文件站（頁面層、爬蟲指令、實體）                    | 永遠                                                                                                                        |
 | GitHub repo description、topics、homepage 與 README 簡短描述（R9） | `git remote get-url origin` 為 `github.com`；不一致時由 `/seo-optimize` 以 `AskUserQuestion` 附完整 `gh repo edit` 指令詢問 |
-| 套件登錄頁（R8） | 函式庫／CLI 專案 |
+| 套件登錄頁（R8）                                                   | 函式庫／CLI 專案                                                                                                            |
 
 研究、關鍵字詢問、規劃確認、`gh repo edit` 詢問、報告與「本次發現的新規範」表皆依 `/seo-optimize` 自身流程。
 
 呼叫時附上本站的套用位置契約：
 
-| 規劃項目                                                 | 套用位置                                                                                                                                                            |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 頁面 title／description／keywords                        | `build.js` 的 `HOME_TITLE`／`HOME_TITLE_ZH`／`DESCRIPTIONS`／`DESCRIPTIONS_ZH`／`KEYWORDS`／`KEYWORDS_ZH`                                                          |
-| 頁面內容、標題階層                                       | `pages/*.md`（英中同步）                                                                                                                                            |
-| 實體、OG 圖、favicon、AI 使用偏好、`x-default`           | `build.js` 站台常數（`PERSON_*`／`ORG_*`／`SAME_AS`／`OG_IMAGE`／`FAVICON`／`AI_*`／`X_DEFAULT`）與 `wiki-worker/.doc/seo/config.json`；favicon 檔為 `public/favicon.png` |
-| 範本機制本身（新規格、新格式、範本輸出被推翻）           | `{skill_dir}/scripts/templates/`，依 Step 3.1.1 升版並寫 CHANGELOG，再依 Step 3.1 同步回專案；不只改單一專案                                                        |
-| `public/*.html`、`sitemap.xml`、`robots.txt`、`llms*.txt`、`_headers` | 不直接修改：皆為 `build.js` 產出，改上列來源後重跑 `node build.js`                                                                                       |
+| 規劃項目                                                              | 套用位置                                                                                                                                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 頁面 title／description／keywords                                     | `build.js` 的 `HOME_TITLE`／`HOME_TITLE_ZH`／`DESCRIPTIONS`／`DESCRIPTIONS_ZH`／`KEYWORDS`／`KEYWORDS_ZH`                                                                 |
+| 頁面內容、標題階層                                                    | `pages/*.md`（英中同步）                                                                                                                                                  |
+| 實體、OG 圖、favicon、AI 使用偏好、`x-default`                        | `build.js` 站台常數（`PERSON_*`／`ORG_*`／`SAME_AS`／`OG_IMAGE`／`FAVICON`／`AI_*`／`X_DEFAULT`）與 `wiki-worker/.doc/seo/config.json`；favicon 檔為 `public/favicon.png` |
+| 範本機制本身（新規格、新格式、範本輸出被推翻）                        | `{skill_dir}/scripts/templates/`，依 Step 3.1.1 升版並寫 CHANGELOG，再依 Step 3.1 同步回專案；不只改單一專案                                                              |
+| `public/*.html`、`sitemap.xml`、`robots.txt`、`llms*.txt`、`_headers` | 不直接修改：皆為 `build.js` 產出，改上列來源後重跑 `node build.js`                                                                                                        |
 
 `/seo-optimize` 套用完成後重跑 `node wiki-worker/build.js`，再執行 Step 8.5。
 
@@ -623,51 +639,51 @@ Step 3.3 編譯完成後執行 `/seo-optimize <project_root>`（傳專案根，c
 
 不做研究，依範本內建行為與下列基本規則填值：
 
-| 項目                                  | 基本規則                                                                                                                                 |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `HOME_TITLE`／`HOME_TITLE_ZH`         | 含實讀原始碼得出的產品關鍵字；EN ≤ 60 字元、ZH ≤ 30 字；各語言自行撰寫；作者名只出現一次                                                 |
-| `DESCRIPTIONS`／`DESCRIPTIONS_ZH`     | 每頁一句，描述該頁實際內容；EN ≤ 160 字元、ZH ≤ 80 字；全站不重複、不用樣板句；首頁含產品類別與作者名                                    |
-| `KEYWORDS`／`KEYWORDS_ZH`             | 取自該頁實際出現的主題詞                                                                                                                 |
-| 品牌詞（人名、帳號、組織名）          | 只放署名列、JSON-LD、首頁 description、llms.txt；人名入 title 僅限首頁                                                               |
-| `AI_TRAIN`／`AI_INPUT`／`AI_SEARCH`   | 取 `<project_root>/.doc/seo-optimize/config.json` 的 `ai_usage`；沒有則詢問使用者一次並寫入 `wiki-worker/.doc/seo/config.json`，不得代填 |
+| 項目                                | 基本規則                                                                                                                                 |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `HOME_TITLE`／`HOME_TITLE_ZH`       | 含實讀原始碼得出的產品關鍵字；EN ≤ 60 字元、ZH ≤ 30 字；各語言自行撰寫；作者名只出現一次                                                 |
+| `DESCRIPTIONS`／`DESCRIPTIONS_ZH`   | 每頁一句，描述該頁實際內容；EN ≤ 160 字元、ZH ≤ 80 字；全站不重複、不用樣板句；首頁含產品類別與作者名                                    |
+| `KEYWORDS`／`KEYWORDS_ZH`           | 取自該頁實際出現的主題詞                                                                                                                 |
+| 品牌詞（人名、帳號、組織名）        | 只放署名列、JSON-LD、首頁 description、llms.txt；人名入 title 僅限首頁                                                                   |
+| `AI_TRAIN`／`AI_INPUT`／`AI_SEARCH` | 取 `<project_root>/.doc/seo-optimize/config.json` 的 `ai_usage`；沒有則詢問使用者一次並寫入 `wiki-worker/.doc/seo/config.json`，不得代填 |
 
 ### Step 8.4：範本內建的 SEO 輸出
 
-| 項目                  | 產出                                                                                                                                        | 行為                                                                                                                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Title                 | `HOME_TITLE`／`HOME_TITLE_ZH`；其餘頁由範本組成 `{label} - {SITE_NAME} Docs`／`{label}｜{SITE_NAME} 文件`（人名只放首頁 title） | —                                                                                                                                                                                                          |
-| Description           | `DESCRIPTIONS`／`DESCRIPTIONS_ZH`                                                                                                           | 版本頁由 `releaseDescription()` 取各自 `## Summary`                                                                                                                                                        |
-| canonical／hreflang   | 範本內建                                                                                                                                    | `en` + `zh-Hant-TW` 兩條 alternate；`X_DEFAULT` 有值時另輸出 `x-default`，預設空字串不輸出；版本頁無 alternate                                                                                             |
-| Favicon               | `public/favicon.png`＋`FAVICON`                                                                                                             | 為空時不輸出 `<link rel="icon">`，並在回應列「需提供 favicon」                                                                                                                                             |
-| OG／Twitter           | 範本內建                                                                                                                                    | 首頁 `og:type website`、其餘 `article`；`OG_IMAGE` 為空時 `twitter:card summary` 且不輸出圖片 meta，並在回應列「需提供 OG 圖」                                                                             |
-| h1                    | 主題頁 md 以 `# ` 開頭；首頁與版本頁由 `ensureH1()` 補                                                                                      | 每頁恰一個 h1                                                                                                                                                                                              |
-| JSON-LD               | 範本內建 `@graph`                                                                                                                           | Person ＋ Organization（有 `ORG_NAME` 才有）＋ WebSite ＋ 首頁 `SoftwareSourceCode`／其餘 `TechArticle`                                                                                                    |
-| 日期                  | 範本內建 `stampDates()`＋`public/docs/dates.json`                                                                                           | 內容 SHA-256 變了才更新 `dateModified`；h1 下方 `.page-date`（`Last updated`／`最後更新`，版本頁 `Released`）、JSON-LD、sitemap `lastmod` 同一值；版本頁用 release 日期                                                                                                   |
-| Organization          | `ORG_NAME`／`ORG_NAME_ZH`／`ORG_SAME_AS`                                                                                                    | 只填實際存在的組織；定位文字放 `TAGLINE`                                                                                                                                                                   |
-| 索引提交              | `indexnow.js`＋`npm run deploy`                                                                                                             | 部署後只送 `lastmod` 有變的 URL；首次生成時先徵得使用者同意才接進 deploy                                                                                                                                   |
-| robots.txt／sitemap   | 範本內建                                                                                                                                    | `User-agent: *` / `Allow: /` ＋ `Sitemap:`；sitemap 含所有 EN／ZH／版本頁                                                                                                                                  |
-| llms.txt              | 範本內建（由 NAV／DESCRIPTIONS 產生）                                                                                                       | 每頁 Markdown 版、`rel="alternate" type="text/markdown"`、`rel="describedby"`；另產 `## Symbols`、`llms-full.txt`（EN／ZH）                                                                                |
-| 署名列                | `<footer class="byline">`                                                                                                                   | 作者名、帳號、組織名與 JSON-LD、llms.txt 寫法一致                                                                                                                                                          |
-| AI 使用偏好           | robots.txt `Content-Usage`／`Content-signal`、`_headers` `/*` 的 `Content-Usage`                                                            | 值全為空時不輸出                                                                                                                                                                                           |
+| 項目                | 產出                                                                                                                            | 行為                                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Title               | `HOME_TITLE`／`HOME_TITLE_ZH`；其餘頁由範本組成 `{label} - {SITE_NAME} Docs`／`{label}｜{SITE_NAME} 文件`（人名只放首頁 title） | —                                                                                                                                                                       |
+| Description         | `DESCRIPTIONS`／`DESCRIPTIONS_ZH`                                                                                               | 版本頁由 `releaseDescription()` 取各自 `## Summary`                                                                                                                     |
+| canonical／hreflang | 範本內建                                                                                                                        | `en` + `zh-Hant-TW` 兩條 alternate；`X_DEFAULT` 有值時另輸出 `x-default`，預設空字串不輸出；版本頁無 alternate                                                          |
+| Favicon             | `public/favicon.png`＋`FAVICON`                                                                                                 | 為空時不輸出 `<link rel="icon">`，並在回應列「需提供 favicon」                                                                                                          |
+| OG／Twitter         | 範本內建                                                                                                                        | 首頁 `og:type website`、其餘 `article`；`OG_IMAGE` 為空時 `twitter:card summary` 且不輸出圖片 meta，並在回應列「需提供 OG 圖」                                          |
+| h1                  | 主題頁 md 以 `# ` 開頭；首頁與版本頁由 `ensureH1()` 補                                                                          | 每頁恰一個 h1                                                                                                                                                           |
+| JSON-LD             | 範本內建 `@graph`                                                                                                               | Person ＋ Organization（有 `ORG_NAME` 才有）＋ WebSite ＋ 首頁 `SoftwareSourceCode`／其餘 `TechArticle`                                                                 |
+| 日期                | 範本內建 `stampDates()`＋`public/docs/dates.json`                                                                               | 內容 SHA-256 變了才更新 `dateModified`；h1 下方 `.page-date`（`Last updated`／`最後更新`，版本頁 `Released`）、JSON-LD、sitemap `lastmod` 同一值；版本頁用 release 日期 |
+| Organization        | `ORG_NAME`／`ORG_NAME_ZH`／`ORG_SAME_AS`                                                                                        | 只填實際存在的組織；定位文字放 `TAGLINE`                                                                                                                                |
+| 索引提交            | `indexnow.js`＋`npm run deploy`                                                                                                 | 部署後只送 `lastmod` 有變的 URL；首次生成時先徵得使用者同意才接進 deploy                                                                                                |
+| robots.txt／sitemap | 範本內建                                                                                                                        | `User-agent: *` / `Allow: /` ＋ `Sitemap:`；sitemap 含所有 EN／ZH／版本頁                                                                                               |
+| llms.txt            | 範本內建（由 NAV／DESCRIPTIONS 產生）                                                                                           | 每頁 Markdown 版、`rel="alternate" type="text/markdown"`、`rel="describedby"`；另產 `## Symbols`、`llms-full.txt`（EN／ZH）                                             |
+| 署名列              | `<footer class="byline">`                                                                                                       | 作者名、帳號、組織名與 JSON-LD、llms.txt 寫法一致                                                                                                                       |
+| AI 使用偏好         | robots.txt `Content-Usage`／`Content-signal`、`_headers` `/*` 的 `Content-Usage`                                                | 值全為空時不輸出                                                                                                                                                        |
 
 ### Step 8.5：輸出檢查（強制）
 
 編譯後逐頁確認範本輸出完整（EN、ZH、版本頁全部），以 `grep` 與 `python3 -c` 解析 JSON-LD 執行：
 
-| 檢查                    | 通過條件                                                                                                                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| h1                      | 每頁恰 1 個                                                                                                                                                                  |
-| JSON-LD                 | 可解析，含 Person／WebSite（有組織時含 Organization），首頁為 `SoftwareSourceCode`                                                                                           |
-| 日期                    | 每個文件頁 JSON-LD 有 `datePublished`／`dateModified`，h1 後緊接 `class="page-date"` 且其 `<time>` 與 `dateModified`、sitemap 該 URL 的 `lastmod` 相同；連續編譯兩次 `dates.json` 不變                                                           |
-| 實體                    | Person `sameAs` 包含共用設定 `same_as` 的每一項                                                                                                                              |
-| 署名列                  | 每頁有 `class="byline"`                                                                                                                                                      |
-| Twitter／OG             | 每頁有 `twitter:card`；`OG_IMAGE` 非空時有 `og:image`                                                                                                                        |
-| Favicon                 | `FAVICON` 非空時每頁有 `<link rel="icon">`，且 `public{FAVICON}` 存在、為 1:1 且 ≥ 48x48                                                                                     |
-| hreflang／lang          | `X_DEFAULT` 為空時無 `x-default`，有值時每個非版本頁恰一條且指向該語言；ZH 頁 `lang="zh-Hant-TW"`                                                                            |
-| title／description 長度 | 符合 Step 8.3 上限；description 無重複                                                                                                                                       |
-| LLM 定位                | 每頁署名列有 `llms.txt` 與本頁 Markdown 連結；`llms.txt` 有 `## Symbols` 且條目數 > 0；`llms-full.txt`（有 ZH 頁時含 `zh/llms-full.txt`）存在且每段有 `Source:`              |
-| llms.txt                | 其中 URL 集合與實際 `.md` 鏡像（版本單頁除外）差集皆為空；每頁 `<head>` 有 `rel="describedby"` 與 `rel="alternate" type="text/markdown"`，且後者指向的 `.md` 檔存在          |
-| 文字檔編碼              | 部署後 `curl -sI {domain}/llms.txt`、`/llms-full.txt` 與任一 `.md`（含 `/zh/`）的 `Content-Type` 帶 `charset=utf-8`；不帶就是 `_headers` 沒生效，中文會以 Latin-1 顯示成亂碼 |
+| 檢查                    | 通過條件                                                                                                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| h1                      | 每頁恰 1 個                                                                                                                                                                            |
+| JSON-LD                 | 可解析，含 Person／WebSite（有組織時含 Organization），首頁為 `SoftwareSourceCode`                                                                                                     |
+| 日期                    | 每個文件頁 JSON-LD 有 `datePublished`／`dateModified`，h1 後緊接 `class="page-date"` 且其 `<time>` 與 `dateModified`、sitemap 該 URL 的 `lastmod` 相同；連續編譯兩次 `dates.json` 不變 |
+| 實體                    | Person `sameAs` 包含共用設定 `same_as` 的每一項                                                                                                                                        |
+| 署名列                  | 每頁有 `class="byline"`                                                                                                                                                                |
+| Twitter／OG             | 每頁有 `twitter:card`；`OG_IMAGE` 非空時有 `og:image`                                                                                                                                  |
+| Favicon                 | `FAVICON` 非空時每頁有 `<link rel="icon">`，且 `public{FAVICON}` 存在、為 1:1 且 ≥ 48x48                                                                                               |
+| hreflang／lang          | `X_DEFAULT` 為空時無 `x-default`，有值時每個非版本頁恰一條且指向該語言；ZH 頁 `lang="zh-Hant-TW"`                                                                                      |
+| title／description 長度 | 符合 Step 8.3 上限；description 無重複                                                                                                                                                 |
+| LLM 定位                | 每頁署名列有 `llms.txt` 與本頁 Markdown 連結；`llms.txt` 有 `## Symbols` 且條目數 > 0；`llms-full.txt`（有 ZH 頁時含 `zh/llms-full.txt`）存在且每段有 `Source:`                        |
+| llms.txt                | 其中 URL 集合與實際 `.md` 鏡像（版本單頁除外）差集皆為空；每頁 `<head>` 有 `rel="describedby"` 與 `rel="alternate" type="text/markdown"`，且後者指向的 `.md` 檔存在                    |
+| 文字檔編碼              | 部署後 `curl -sI {domain}/llms.txt`、`/llms-full.txt` 與任一 `.md`（含 `/zh/`）的 `Content-Type` 帶 `charset=utf-8`；不帶就是 `_headers` 沒生效，中文會以 Latin-1 顯示成亂碼           |
 
 ---
 
@@ -682,17 +698,18 @@ Step 3.3 編譯完成後執行 `/seo-optimize <project_root>`（傳專案根，c
 - [ ] 本次若改過 `scripts/templates/`：`TEMPLATE_VERSION` 已升版，`CHANGELOG.md` 的「最新改動」日期已更新，破壞性變更已寫入「破壞性變更」
 - [ ] `check_coverage.py` exit 0（`missing`／`removed`／`undocumented_removals` 皆為空）
 - [ ] `wiki-worker/public/docs.css` 與 `scripts/templates/docs.css` 逐字相同（`diff` 無輸出）
-- [ ] build.js 輸出的每個自有 class 在 docs.css 都找得到規則（外部來源的 `fa-*`（Font Awesome）、`language-*`（marked 產生的 code fence）除外）：
+- [ ] build.js 輸出的每個自有 class 在 docs.css 都找得到規則（外部來源的 `fa-*`（Font Awesome）、`language-*`、`nanomd`／`md-*`／`prettyprint`／`copy`（NanoMD 輸出，樣式由 `parser.css` 提供）除外）：
 
 ```bash
 grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-zA-Z0-9-]+' \
-  | grep -vE '^(fa|fa-.*|language-.*|class)$' | sort -u \
+  | grep -vE '^(fa|fa-.*|language-.*|nanomd|md-.*|prettyprint|copy|class)$' | sort -u \
   | while read -r c; do grep -q "\.$c" wiki-worker/public/docs.css || echo "MISSING CSS: .$c"; done
 ```
 
       有輸出代表新 class 沒樣式：先把規則補進 `scripts/templates/docs.css`，再整檔覆蓋回專案
 
 - [ ] `wiki-worker/sync-tags.js` 存在且 `REPO` 已是實際 `{owner}/{repo}`，無殘留 `{{REPO}}`
+- [ ] `wiki-worker/sync-nanomd.js` 與範本相同；`nanomd/version.json` 版本＝`package.json` 的 `@pardnchiu/nanomd`（無 `^`）＝已安裝版本，`nanomd/parser.css` 為該版內容
 - [ ] 前端套件（Step 5.1）：`DEMO_SCRIPT` 解析後的 URL `curl -sI` 回 200；`public/demo.js` 與 `scripts/templates/demo.js` 逐字相同；每個編譯後 HTML 都含 `data-demo defer` 的腳本；專案端舊的 `<pkg>-demo` 機制已移除
 - [ ] `wiki-worker/package.json` 與 `wiki-worker/wrangler.toml` 存在，`name` 皆為 `{repo}-wiki`，無殘留 `{{REPO_NAME}}`
 - [ ] `wiki-worker/wrangler.toml` 含 `[observability]` `enabled = false`
@@ -780,7 +797,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 | **僅靠 analyzer JSON 生成內容、未讀完整檔**                                     | analyzer 只抽符號名與 signature，function body 內的邏輯／分支／retry 策略全部漏掉，產出會是「正確但空洞」的文件                                                         |
 | **引用未讀過的 symbol / 檔案路徑**                                              | 幻覺風險最高來源；寫入前必須 grep 確認簽名與行號                                                                                                                        |
 | **改動 build.js 邏輯時未同步 `scripts/templates/build.js`**                     | 若客製化屬通用改進（非該專案特有），應回饋進 skill 範本，否則下個專案重複踩坑                                                                                           |
-| 在本 skill 內重建 SEO 研究、規則或分析腳本 | SEO 規則只在 `/seo-optimize` 維護一份；兩邊各帶一份會各自漂移 |
+| 在本 skill 內重建 SEO 研究、規則或分析腳本                                      | SEO 規則只在 `/seo-optimize` 維護一份；兩邊各帶一份會各自漂移                                                                                                           |
 | 把品牌詞塞進每頁 title／description／h2                                         | 關鍵字堆砌觸發垃圾內容判定；品牌詞的正確位置見 Step 8.3                                                                                                                 |
 | 在 md 或 build.js 手寫頁面上不存在的 schema（FAQPage、aggregateRating、假作者） | 結構化資料垃圾，會被人工處分；JSON-LD 一律由範本 `@graph` 依可見內容產生                                                                                                |
 | `OG_IMAGE` 填未驗證或捏造的圖片網址                                             | 分享卡顯示破圖；找不到真實圖檔就留空並列入待辦                                                                                                                          |
@@ -793,7 +810,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 | 程式碼已有的公開功能沒寫進文件                                                  | 讀者不知道功能存在；文件的價值是完整                                                                                                                                    |
 | 從文件刪除已移除的 API，或移除紀錄不寫版本號                                    | 升級中的讀者需要知道符號去哪了、從哪一版開始；`Removed in` 是 `check_coverage.py` 辨識移除紀錄的關鍵字                                                                  |
 | 非首次生成時沿用舊版範本、只挑部分函式移植                                      | 逐項移植會靜默漏掉其他改動；一律依 `TEMPLATE_VERSION` 整份對齊                                                                                                          |
-| `/seo-optimize` 查到範本層級的新規格卻只改單一專案或列為選用 | 規格更新直接進 `scripts/templates/` 並升版，再同步到專案（Step 8.2） |
+| `/seo-optimize` 查到範本層級的新規格卻只改單一專案或列為選用                    | 規格更新直接進 `scripts/templates/` 並升版，再同步到專案（Step 8.2）                                                                                                    |
 | 改範本卻沒升 `TEMPLATE_VERSION`／沒寫 CHANGELOG                                 | 專案端無法偵測落後，也無法快速定位需修改的差異                                                                                                                          |
 | 前端套件的使用範例只寫成一般 code block，沒有即時預覽                           | 讀者無法確認描述是否正確，文件錯誤也不會被發現（見 Step 5.1 歷史事故）                                                                                                  |
 | 在專案端另寫 `<pkg>-demo` fence／執行器                                         | 與範本分岔，下次對齊範本時會整個消失；通用改進一律改 `scripts/templates/`                                                                                               |
