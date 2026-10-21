@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { Parse } = require("@pardnchiu/nanomd");
 
-const TEMPLATE_VERSION = "5.0.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "6.0.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
@@ -288,17 +288,16 @@ function escapeHtml(text) {
   return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function titleTooLong(title, isZh) {
-  if (!isZh) return title.length > 60;
+function titleTooLong(title) {
   const cjk = (title.match(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/g) || []).length;
-  return cjk > 30 || cjk * 2 + (title.length - cjk) > 60;
+  return title.length + cjk > 60;
 }
 
 function renderPage(slug, title, description, keywords, sidebar, content, toc, lang = "en", dates = null) {
   const isZh = lang === "zh";
   const isReleased = slug === "released" || slug.startsWith("released/");
   const base = isZh ? `${DOMAIN}/zh` : DOMAIN;
-  const canonical = slug === "home" ? `${base}/` : `${base}/${slug}`;
+  const canonical = slug === "home" ? `${base}/` : slug === "released" ? `${base}/released/` : `${base}/${slug}`;
   const keywordList = keywords.split(",").map(k => k.trim());
   const fullKeywords = [...keywordList, ...BRAND_KEYWORDS.filter(k => !keywordList.includes(k))].join(", ");
   let fullTitle;
@@ -308,7 +307,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     fullTitle = isZh
       ? `${title}｜${SITE_NAME} 文件`
       : `${title} - ${SITE_NAME} Docs`;
-    if (titleTooLong(fullTitle, isZh)) {
+    if (titleTooLong(fullTitle)) {
       fullTitle = isZh ? `${title}｜${SITE_NAME}` : `${title} - ${SITE_NAME}`;
     }
   }
@@ -631,28 +630,27 @@ if (TAGS.length) {
 fs.writeFileSync(DATES_PATH, JSON.stringify(DATES, null, 2) + "\n");
 const lastmodOf = key => DATES[key]?.modified || BUILD_DATE;
 let sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
-sitemap += `  <url><loc>${DOMAIN}/</loc><changefreq>weekly</changefreq><priority>1.0</priority><lastmod>${lastmodOf("en:home")}</lastmod></url>\n`;
+sitemap += `  <url><loc>${DOMAIN}/</loc><lastmod>${lastmodOf("en:home")}</lastmod></url>\n`;
 for (const slug of allSlugs) {
   if (slug === "home") continue;
   if (!DATES[`en:${slug}`]) continue;
   const lastmod = lastmodOf(`en:${slug}`);
-  sitemap += `  <url><loc>${DOMAIN}/${slug}</loc><changefreq>monthly</changefreq><priority>0.6</priority><lastmod>${lastmod}</lastmod></url>\n`;
+  sitemap += `  <url><loc>${DOMAIN}/${slug}</loc><lastmod>${lastmod}</lastmod></url>\n`;
 }
 if (zhSlugs.length) {
-  sitemap += `  <url><loc>${DOMAIN}/zh/</loc><changefreq>weekly</changefreq><priority>0.9</priority><lastmod>${lastmodOf("zh:home")}</lastmod></url>\n`;
+  sitemap += `  <url><loc>${DOMAIN}/zh/</loc><lastmod>${lastmodOf("zh:home")}</lastmod></url>\n`;
   for (const slug of zhSlugs) {
     if (slug === "home") continue;
     const lastmod = lastmodOf(`zh:${slug}`);
-    sitemap += `  <url><loc>${DOMAIN}/zh/${slug}</loc><changefreq>monthly</changefreq><priority>0.5</priority><lastmod>${lastmod}</lastmod></url>\n`;
+    sitemap += `  <url><loc>${DOMAIN}/zh/${slug}</loc><lastmod>${lastmod}</lastmod></url>\n`;
   }
 }
 if (releaseTags.length) {
-  sitemap += `  <url><loc>${DOMAIN}/released/</loc><changefreq>weekly</changefreq><priority>0.6</priority><lastmod>${TAG_DATES[releaseTags[0]] || BUILD_DATE}</lastmod></url>\n`;
+  sitemap += `  <url><loc>${DOMAIN}/released/</loc><lastmod>${TAG_DATES[releaseTags[0]] || BUILD_DATE}</lastmod></url>\n`;
   for (let i = 0; i < releaseTags.length; i++) {
     const tag = releaseTags[i];
-    const pri = i < 5 ? 0.5 : 0.3; // only recent releases stay worth crawling
     const lastmod = TAG_DATES[tag] || BUILD_DATE;
-    sitemap += `  <url><loc>${DOMAIN}/released/${tag}</loc><changefreq>yearly</changefreq><priority>${pri}</priority><lastmod>${lastmod}</lastmod></url>\n`;
+    sitemap += `  <url><loc>${DOMAIN}/released/${tag}</loc><lastmod>${lastmod}</lastmod></url>\n`;
   }
 }
 sitemap += `</urlset>\n`;

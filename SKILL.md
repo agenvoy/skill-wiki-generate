@@ -7,7 +7,7 @@ description: 從原始碼分析自動生成雙語文件站台（wiki-worker/publ
 
 從原始碼、CLAUDE.md、`doc/` 既有文件與專案結構分析，產生雙語靜態文件站（`wiki-worker/public/docs/`），並提供 `wiki-worker/build.js` 將 markdown 編譯為可直接部署的 HTML。
 
-**SEO / AEO 搭配 `/seo-optimize`。** `build.js` 範本內建 title、description、JSON-LD、OG/Twitter、h1、hreflang、sitemap、robots、llms.txt 與可見作者署名的輸出，生成時只填入專案值；研究、關鍵字與優化由 Step 8 交給 `/seo-optimize`，未安裝時詢問是否下載，否決則依基本方式完成。
+**SEO / AEO 搭配 `/seo-optimize`。** `build.js` 範本內建 title、description、JSON-LD、OG/Twitter、h1、hreflang、sitemap、robots、llms.txt 與可見作者署名的輸出，生成時只填入專案值；研究、關鍵字與優化由 Step 8 交給 `/seo-optimize`，未安裝時直接下載，下載失敗則依基本方式完成。
 
 ## 指令語法
 
@@ -345,6 +345,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
    cp {skill_dir}/scripts/templates/docs.css <project_root>/wiki-worker/public/docs.css
    cp {skill_dir}/scripts/templates/package.json <project_root>/wiki-worker/package.json
    cp {skill_dir}/scripts/templates/wrangler.toml <project_root>/wiki-worker/wrangler.toml
+   cp {skill_dir}/scripts/templates/worker.js <project_root>/wiki-worker/worker.js
    cp {skill_dir}/scripts/templates/indexnow.js <project_root>/wiki-worker/indexnow.js
    cp {skill_dir}/scripts/templates/sync-nanomd.js <project_root>/wiki-worker/sync-nanomd.js
    cp {skill_dir}/scripts/templates/demo.js <project_root>/wiki-worker/public/demo.js   # 僅前端套件（Step 5.1）
@@ -395,7 +396,7 @@ python3 {skill_dir}/scripts/check_coverage.py <project_root> --write-symbols <pr
 
 `package.json` 的 `scripts` 也對齊範本（範本新增的流程如 IndexNow 串在 `deploy` 中），`name` 與相依版本不動；範本新增的腳本檔（如 `indexnow.js`）一併複製。
 
-重新填值的來源：既有 `build.js` 的站台常數值 → `wiki-worker/.doc/seo/config.json` → Step 0.3 預設 fallback。新範本新增、但兩處都沒有值的欄位（如舊站沒有 `tagline`）填預設值，並在回應中列出。`package.json`、`wrangler.toml` 不動，唯一例外：`wrangler.toml` 缺 `[observability]` 區段時補上 `enabled = false`（使用者 2026-10-03 指定所有文件站關閉 Workers observability）。
+重新填值的來源：既有 `build.js` 的站台常數值 → `wiki-worker/.doc/seo/config.json` → Step 0.3 預設 fallback。新範本新增、但兩處都沒有值的欄位（如舊站沒有 `tagline`）填預設值，並在回應中列出。`package.json`、`wrangler.toml` 不動，例外：`wrangler.toml` 缺 `[observability]` 區段時補上 `enabled = false`（使用者 2026-10-03 指定所有文件站關閉 Workers observability）；缺 `main = "worker.js"` 或 `[assets]` 的 `binding = "ASSETS"` 時補上，並複製範本 `worker.js`（使用者 2026-10-21 指定所有文件站的 404 一律 302 轉回 `/`；用 302 而非 301，避免瀏覽器永久快取，日後補上該頁時仍可進入）。
 
 專案端若有自行實作的範例機制（`<pkg>-demo` fence、`public/<pkg>-demo.js`、自訂 `renderDemos()`，例：QuickUI、NanoMD、nanojson），重新複製 `build.js` 後該機制會消失：把對應 code block 依 Step 5.1 改寫成 ` ```demo `（JS-only 範例補上掛載點 HTML 並包進 `<script>`），刪除舊的 `public/<pkg>-demo.js`，並把舊值填入 `DEMO_SCRIPT`。
 
@@ -455,7 +456,7 @@ build.js 讀 `public/docs/tags/` 後自動產生：
 | 單版本頁        | `/released/<tag>` | 該 release 的 changelog；側欄為版本清單（含回文件站的連結）                        |
 | Header 版本徽章 | 所有頁            | 最新 tag，連向站內 `/released/<tag>`（不外連 GitHub，讀者留在文件站）              |
 | 側欄入口        | 所有文件頁        | 底部 `Released` / `版本紀錄` 連結                                                  |
-| sitemap         | `sitemap.xml`     | `/released/` priority 0.6；最新 5 個 tag 0.5、其餘 0.3，`lastmod` 取 manifest 日期 |
+| sitemap         | `sitemap.xml`     | 只輸出 `<loc>` 與 `<lastmod>`（Google 忽略 `priority`／`changefreq`）；release 頁 `lastmod` 取 manifest 日期 |
 
 **tag 排序**：`semverSort` 依 `major.minor.patch` 數值降冪（`v` 前綴會被去掉，缺項視為 0），非三段式數字 tag 不保證排序正確。
 
@@ -605,8 +606,8 @@ cd <project_root>/wiki-worker && node build.js
 | 狀態                                                                             | 動作                                                                                                                                                                                                  |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 可用 skill 清單含 `seo-optimize`，或 `{skill_dir}/../seo-optimize/SKILL.md` 存在 | Step 8.2                                                                                                                                                                                              |
-| 不存在                                                                           | 以 `AskUserQuestion` 詢問是否下載 `https://github.com/agenvoy/skill-seo-optimize`；同意 → `git clone --depth 1 https://github.com/agenvoy/skill-seo-optimize {skill_dir}/../seo-optimize` 後 Step 8.2 |
-| 使用者否決，或 clone 失敗                                                        | Step 8.3，並在回應註明「本次未經 `/seo-optimize`，依基本方式完成」                                                                                                                                    |
+| 不存在                                                                           | 直接 `git clone --depth 1 https://github.com/agenvoy/skill-seo-optimize {skill_dir}/../seo-optimize` 後 Step 8.2 |
+| clone 失敗                                                                 | Step 8.3，並在回應註明「本次未經 `/seo-optimize`，依基本方式完成」                                                                                                                                    |
 | `--only` 模式                                                                    | 不呼叫 `/seo-optimize`；重生的頁面依 Step 8.3 基本方式填值，仍執行 Step 8.5 檢查                                                                                                                      |
 
 ### Step 8.2：呼叫 `/seo-optimize`
@@ -641,8 +642,8 @@ Step 3.3 編譯完成後執行 `/seo-optimize <project_root>`（傳專案根，c
 
 | 項目                                | 基本規則                                                                                                                                 |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `HOME_TITLE`／`HOME_TITLE_ZH`       | 含實讀原始碼得出的產品關鍵字；EN ≤ 60 字元、ZH ≤ 30 字；各語言自行撰寫；作者名只出現一次                                                 |
-| `DESCRIPTIONS`／`DESCRIPTIONS_ZH`   | 每頁一句，描述該頁實際內容；EN ≤ 160 字元、ZH ≤ 80 字；全站不重複、不用樣板句；首頁含產品類別與作者名                                    |
+| `HOME_TITLE`／`HOME_TITLE_ZH`       | 含實讀原始碼得出的產品關鍵字；顯示寬度 ≤ 60（CJK 與全形字元計 2、其餘計 1）；各語言自行撰寫；作者名只出現一次                                                 |
+| `DESCRIPTIONS`／`DESCRIPTIONS_ZH`   | 每頁一句，描述該頁實際內容；顯示寬度 ≤ 160（CJK 與全形字元計 2、其餘計 1）；全站不重複、不用樣板句；首頁含產品類別與作者名                                    |
 | `KEYWORDS`／`KEYWORDS_ZH`           | 取自該頁實際出現的主題詞                                                                                                                 |
 | 品牌詞（人名、帳號、組織名）        | 只放署名列、JSON-LD、首頁 description、llms.txt；人名入 title 僅限首頁                                                                   |
 | `AI_TRAIN`／`AI_INPUT`／`AI_SEARCH` | 取 `<project_root>/.doc/seo-optimize/config.json` 的 `ai_usage`；沒有則詢問使用者一次並寫入 `wiki-worker/.doc/seo/config.json`，不得代填 |
@@ -713,6 +714,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 - [ ] 前端套件（Step 5.1）：`DEMO_SCRIPT` 解析後的 URL `curl -sI` 回 200；`public/demo.js` 與 `scripts/templates/demo.js` 逐字相同；每個編譯後 HTML 都含 `data-demo defer` 的腳本；專案端舊的 `<pkg>-demo` 機制已移除
 - [ ] `wiki-worker/package.json` 與 `wiki-worker/wrangler.toml` 存在，`name` 皆為 `{repo}-wiki`，無殘留 `{{REPO_NAME}}`
 - [ ] `wiki-worker/wrangler.toml` 含 `[observability]` `enabled = false`
+- [ ] `wiki-worker/worker.js` 存在且 `wrangler.toml` 含 `main = "worker.js"` 與 `binding = "ASSETS"`；部署後 `curl -sI {domain}/__not-found__` 回 `302` 且 `location` 為 `{domain}/`
 - [ ] `wiki-worker/public/docs/pages/home.md` 存在且內容逐字鏡像 `README.md`
 - [ ] README 引用的本地圖片（如有）已原樣複製到 `wiki-worker/public/assets/`，且 `home.md`／`home.zh.md` 內圖片路徑已改寫為 `/assets/<檔名>`
 - [ ] 每個 NAV 內宣告的 slug 都有對應 `pages/<slug>.md`
@@ -741,7 +743,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 
 ### SEO / AEO（Step 8）
 
-- [ ] 完整生成時已依 Step 8.1 呼叫 `/seo-optimize`，或使用者否決下載並於回應註明依基本方式完成
+- [ ] 完整生成時已依 Step 8.1 呼叫 `/seo-optimize`，或 clone 失敗並於回應註明依基本方式完成
 - [ ] `/seo-optimize` 的套用皆落在 Step 8.2 契約的來源檔，未直接修改 `public/` 下的編譯產物；套用後已重跑 `node build.js`
 - [ ] `wiki-worker/.doc/seo/config.json` 存在且欄位完整
 - [ ] `build.js` 無殘留 `{{PERSON_*}}` / `{{ORG_*}}` / `{{OG_IMAGE}}` / `{{FAVICON}}` / `{{HOME_TITLE*}}` / `// {{SAME_AS}}` 等 SEO placeholder
@@ -771,7 +773,7 @@ grep -oE 'class="[a-zA-Z0-9 _-]+"' wiki-worker/build.js | grep -oE '[a-zA-Z][a-z
 8. 靜默修正 → 對照 code / config 修正常見錯漏
 9. 同步版本 → node wiki-worker/sync-tags.js（`--only` 模式跳過）
 10. 編譯 → node wiki-worker/build.js；檢查 stdout 無 SKIP
-11. SEO → Step 8.1 偵測 /seo-optimize；有則 Step 8.2 呼叫並重新編譯，無則詢問下載、否決走 Step 8.3；最後 Step 8.5 逐頁檢查
+11. SEO → Step 8.1 偵測 /seo-optimize；有則 Step 8.2 呼叫並重新編譯，無則直接下載、失敗走 Step 8.3；最後 Step 8.5 逐頁檢查
 12. 驗證 → 跑檢查清單；連結 / 對向檔案存在性 + 引用的 symbol 確實存在；check_coverage.py exit 0
 ````
 
