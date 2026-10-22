@@ -127,7 +127,9 @@ def _pattern_exists(root: Path, pattern: str) -> bool:
 
 
 def _normalize_detected_language(root: Path, lang: str) -> str:
-    if lang == "javascript" and (root / "tsconfig.json").exists():
+    if lang == "javascript" and any(
+        not any(p in t.parts for p in IGNORE_DIRS) for t in root.rglob("tsconfig.json")
+    ):
         return "typescript"
     return lang
 

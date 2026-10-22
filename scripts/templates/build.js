@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { Parse } = require("@pardnchiu/nanomd");
 
-const TEMPLATE_VERSION = "6.0.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "7.0.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
@@ -14,25 +14,6 @@ const AUTHOR_URL = "{{AUTHOR_URL}}";
 const AUTHOR_HANDLE = "{{AUTHOR_HANDLE}}";
 const GTAG_ID = "{{GTAG_ID}}"; // empty string disables analytics
 
-// === SEO / entity config — filled in by wiki-generate (SKILL.md Step 0.3 / Step 8) ===
-const PERSON_ID = "{{PERSON_ID}}";
-const PERSON_NAME = "{{PERSON_NAME}}";
-const PERSON_ALT_NAMES = [
-  // {{PERSON_ALT_NAMES}}
-];
-const SAME_AS = [
-  // {{SAME_AS}}
-];
-const ORG_NAME = "{{ORG_NAME}}"; // empty string omits the Organization node and byline segment
-const ORG_NAME_ZH = "{{ORG_NAME_ZH}}";
-const ORG_SAME_AS = [
-  // {{ORG_SAME_AS}}
-];
-const TAGLINE = "{{TAGLINE}}"; // byline-only positioning text (e.g. "Taiwan · Infrastructure Engineering"); never becomes an Organization entity
-const ORG_ID = "{{ORG_ID}}";
-const ORG_URL = "{{ORG_URL}}";
-const OG_IMAGE = "{{OG_IMAGE}}"; // empty string omits og:image / twitter:image
-const FAVICON = "{{FAVICON}}";
 const DEMO_SCRIPT = "{{DEMO_SCRIPT}}".replace("{version}", () => require("../package.json").version);
 const DEMO_SCRIPT_ATTRS = {
   // {{DEMO_SCRIPT_ATTRS}}
@@ -40,18 +21,47 @@ const DEMO_SCRIPT_ATTRS = {
 const DEMO_LOG_IGNORE = [
   // {{DEMO_LOG_IGNORE}}
 ];
-const HOME_TITLE = "{{HOME_TITLE}}";
-const HOME_TITLE_ZH = "{{HOME_TITLE_ZH}}";
-const PROGRAMMING_LANGUAGE = "{{PROGRAMMING_LANGUAGE}}";
-const LICENSE_URL = "{{LICENSE_URL}}"; // empty string omits license
 const ZH_LANG = "zh-Hant-TW";
-const AI_TRAIN = "{{AI_TRAIN}}";
-const AI_INPUT = "{{AI_INPUT}}";
-const AI_SEARCH = "{{AI_SEARCH}}";
-const X_DEFAULT = "{{X_DEFAULT}}";
-const BRAND_KEYWORDS = [
-  // {{BRAND_KEYWORDS}}
-];
+
+const SEO_PATH = path.join(__dirname, "seo.json");
+let SEO = null;
+if (fs.existsSync(SEO_PATH)) {
+  try {
+    SEO = JSON.parse(fs.readFileSync(SEO_PATH, "utf-8"));
+  } catch (e) {
+    console.error(`[Invalid] seo.json: ${e.message}`);
+    process.exit(1);
+  }
+} else {
+  console.warn("[Not found] seo.json: run /seo-optimize; building content-only pages without meta, JSON-LD, sitemap, robots.txt or llms.txt");
+}
+const HAS_SEO = SEO !== null;
+const S = SEO || {};
+const PERSON_ID = S.person?.id || "";
+const PERSON_NAME = S.person?.name || AUTHOR_NAME;
+const PERSON_ALT_NAMES = S.person?.alt_names || [];
+const SAME_AS = S.person?.same_as || [];
+const ORG_NAME = S.organization?.name || "";
+const ORG_NAME_ZH = S.organization?.name_zh || "";
+const ORG_SAME_AS = S.organization?.same_as || [];
+const ORG_ID = S.organization?.id || "";
+const ORG_URL = S.organization?.url || "";
+const TAGLINE = S.tagline || "";
+const OG_IMAGE = S.og_image || "";
+const FAVICON = S.favicon || "";
+const HOME_TITLE = S.home_title?.en || REPO;
+const HOME_TITLE_ZH = S.home_title?.zh || REPO;
+const PROGRAMMING_LANGUAGE = S.programming_language || "";
+const LICENSE_URL = S.license_url || "";
+const AI_TRAIN = S.ai_usage?.train || "";
+const AI_INPUT = S.ai_usage?.input || "";
+const AI_SEARCH = S.ai_usage?.search || "";
+const X_DEFAULT = S.x_default || "";
+const BRAND_KEYWORDS = S.brand_keywords || [];
+const DESCRIPTIONS = S.descriptions?.en || {};
+const DESCRIPTIONS_ZH = S.descriptions?.zh || {};
+const KEYWORDS = S.keywords?.en || {};
+const KEYWORDS_ZH = S.keywords?.zh || {};
 
 const NANOMD_DIR = path.join(__dirname, "nanomd");
 for (const f of ["version.json", "parser.css"]) {
@@ -76,6 +86,8 @@ const TAGS_DIR = path.join(__dirname, "public/docs/tags"); // release notes sync
 const RELEASED_DIR = path.join(OUT_DIR, "released");
 const SYMBOLS_PATH = path.join(__dirname, "public/docs/symbols.json");
 const DATES_PATH = path.join(__dirname, "public/docs/dates.json");
+const REDIRECTS_PATH = path.join(__dirname, "redirects.json");
+const REMOVED_PATH = path.join(__dirname, "removed.json");
 
 // newest first; missing parts count as 0 so "v1.2" sorts against "v1.2.0"
 function semverSort(a, b) {
@@ -126,25 +138,23 @@ function stampDates(key, md) {
 }
 const LATEST_VERSION = TAGS[0] || "";
 
+function readJson(file, fallback) {
+  if (!fs.existsSync(file)) return fallback;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8"));
+  } catch (e) {
+    console.error(`[Invalid] ${path.basename(file)}: ${e.message}`);
+    process.exit(1);
+  }
+}
+const REDIRECTS = readJson(REDIRECTS_PATH, {});
+const REMOVED = new Set(readJson(REMOVED_PATH, []));
+
 // === Page navigation — filled in by wiki-generate from the derived page set ===
 // { section: "Section Label", items: [{ slug: "getting-started", label: "Getting Started" }] }
 const NAV = [
   // {{NAV}}
 ];
-
-// slug -> English meta description (required per page)
-const DESCRIPTIONS = {
-  // {{DESCRIPTIONS}}
-};
-
-// slug -> English SEO keywords, comma separated
-const KEYWORDS = {
-  // {{KEYWORDS}}
-};
-
-const KEYWORDS_ZH = {
-  // {{KEYWORDS_ZH}}
-};
 
 // English section label -> Traditional Chinese section label
 const NAV_ZH_SECTION = {
@@ -154,11 +164,6 @@ const NAV_ZH_SECTION = {
 // slug -> Traditional Chinese nav label
 const NAV_ZH_LABEL = {
   // {{NAV_ZH_LABEL}}
-};
-
-// slug -> Traditional Chinese meta description
-const DESCRIPTIONS_ZH = {
-  // {{DESCRIPTIONS_ZH}}
 };
 
 function slugify(text) {
@@ -298,7 +303,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   const isReleased = slug === "released" || slug.startsWith("released/");
   const base = isZh ? `${DOMAIN}/zh` : DOMAIN;
   const canonical = slug === "home" ? `${base}/` : slug === "released" ? `${base}/released/` : `${base}/${slug}`;
-  const keywordList = keywords.split(",").map(k => k.trim());
+  const keywordList = keywords.split(",").map(k => k.trim()).filter(Boolean);
   const fullKeywords = [...keywordList, ...BRAND_KEYWORDS.filter(k => !keywordList.includes(k))].join(", ");
   let fullTitle;
   if (slug === "home") {
@@ -348,9 +353,6 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       ...(ORG_SAME_AS.length ? { "sameAs": ORG_SAME_AS } : {}),
     }
     : null;
-  const dateProps = dates
-    ? { "datePublished": dates.published, "dateModified": dates.modified }
-    : {};
   const publisher = { "@id": org ? ORG_ID : PERSON_ID };
   const website = {
     "@type": "WebSite",
@@ -360,7 +362,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     "inLanguage": ["en", ZH_LANG],
     "publisher": publisher,
   };
-  const node = slug === "home"
+  const nodeOf = dateProps => slug === "home"
     ? {
       "@type": "SoftwareSourceCode",
       "@id": `${canonical}#software`,
@@ -387,7 +389,9 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
       "author": { "@id": PERSON_ID },
       "publisher": publisher,
     };
-  const graph = org ? [person, org, website, node] : [person, website, node];
+  const graphOf = dateProps => org ? [person, org, website, nodeOf(dateProps)] : [person, website, nodeOf(dateProps)];
+  if (typeof dates === "function") dates = dates(JSON.stringify([fullTitle, description, fullKeywords, canonical, altLinks, graphOf({})]));
+  const graph = graphOf(dates ? { "datePublished": dates.published, "dateModified": dates.modified } : {});
   const jsonLd = JSON.stringify({ "@context": "https://schema.org", "@graph": graph });
 
   const orgSegment = ORG_NAME ? ` · ${orgName}` : "";
@@ -396,7 +400,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   const body = dateLine ? content.replace("</h1>", `</h1>\n${dateLine}`) : content;
   const taglineSegment = TAGLINE ? ` · ${TAGLINE}` : "";
   const handleLink = `<a href="https://github.com/${AUTHOR_HANDLE}" target="_blank" rel="noopener">${AUTHOR_HANDLE}</a>`;
-  const agentLinks = ` · <a href="/llms.txt">llms.txt</a> · <a href="${markdownHref(slug, isZh)}" type="text/markdown">${isZh ? "本頁 Markdown" : "Markdown"}</a>`;
+  const agentLinks = !HAS_SEO || slug === "404" ? "" : ` · <a href="/llms.txt">llms.txt</a> · <a href="${markdownHref(slug, isZh)}" type="text/markdown">${isZh ? "本頁 Markdown" : "Markdown"}</a>`;
   const byline = isZh
     ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${handleLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`
     : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${handleLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`;
@@ -425,12 +429,13 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="robots" content="index, follow" />
     <title>${titleHtml}</title>
+    ${slug === "404" ? `<meta name="robots" content="noindex" />
+    ` : HAS_SEO ? `<meta name="robots" content="index, follow" />
     <meta name="title" content="${titleHtml}" />
     <meta name="description" content="${descriptionHtml}" />
-    <meta name="keywords" content="${keywordsHtml}" />
-    <meta name="author" content="${AUTHOR_NAME}" />
+    ${keywordsHtml ? `<meta name="keywords" content="${keywordsHtml}" />
+    ` : ""}<meta name="author" content="${AUTHOR_NAME}" />
     <link rel="author" href="${AUTHOR_URL}" />
     <link rel="canonical" href="${canonical}" />
     <link rel="alternate" type="text/markdown" href="${DOMAIN}${markdownHref(slug, isZh)}" />
@@ -446,7 +451,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     <meta name="twitter:title" content="${titleHtml}" />
     <meta name="twitter:description" content="${descriptionHtml}" />${twitterImage}
     <script type="application/ld+json">${jsonLd}</script>
-    ${analytics}<link rel="preconnect" href="https://fonts.googleapis.com" />
+    ` : ""}${analytics}<link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
@@ -533,11 +538,11 @@ for (const slug of allSlugs) {
   if (slug === "home") html = ensureH1(html, REPO);
 
   const label = NAV.flatMap(g => g.items).find(i => i.slug === slug)?.label || slug;
-  const desc = DESCRIPTIONS[slug] || `${label} — ${SITE_NAME} documentation.`;
-  const kw = KEYWORDS[slug] || `${SITE_NAME.toLowerCase()}, documentation`;
+  const desc = DESCRIPTIONS[slug] || "";
+  const kw = KEYWORDS[slug] || "";
   const sidebar = buildSidebar(slug, "en");
   const toc = buildTOC(html);
-  const page = renderPage(slug, label, desc, kw, sidebar, html, toc, "en", stampDates(`en:${slug}`, md));
+  const page = renderPage(slug, label, desc, kw, sidebar, html, toc, "en", seo => stampDates(`en:${slug}`, md + seo));
 
   const outPath = slug === "home"
     ? path.join(OUT_DIR, "index.html")
@@ -560,7 +565,8 @@ for (const slug of allSlugs) {
     const zhSidebar = buildSidebar(slug, "zh");
     const zhToc = buildTOC(zhHtml, "zh");
     const zhMd = fs.readFileSync(zhMdPath, "utf-8");
-    const zhPage = renderPage(slug, zhLabel, zhDesc, KEYWORDS_ZH[slug] || kw, zhSidebar, zhHtml, zhToc, "zh", stampDates(`zh:${slug}`, zhMd));
+    pageMd[`${slug}.zh`] = zhMd;
+    const zhPage = renderPage(slug, zhLabel, zhDesc, KEYWORDS_ZH[slug] || "", zhSidebar, zhHtml, zhToc, "zh", seo => stampDates(`zh:${slug}`, zhMd + seo));
     const zhOut = slug === "home"
       ? path.join(ZH_DIR, "index.html")
       : path.join(ZH_DIR, `${slug}.html`);
@@ -626,8 +632,77 @@ if (TAGS.length) {
   console.log(`OK: ${releaseTags.length} release pages + index`);
 }
 
-// === sitemap.xml ===
+function projectIntro(md) {
+  const lines = md.split("\n");
+  let fence = false;
+  let plain = "";
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/^(`{3,}|~{3,})/.test(line)) fence = !fence;
+    if (fence) continue;
+    if (line.startsWith(">") && !(lines[i - 1] || "").trim().startsWith(">")) {
+      const block = [];
+      for (let j = i; j < lines.length && lines[j].trim().startsWith(">"); j++) block.push(lines[j].trim().replace(/^>\s?/, ""));
+      if (!block[0].startsWith("[!") && block.join(" ").trim()) return block.join(" ").trim();
+    }
+    if (!plain && /^[\p{L}\p{N}*_]/u.test(line) && line.length > 30) plain = line;
+  }
+  return plain;
+}
+
+function buildNotFound(lang) {
+  const isZh = lang === "zh";
+  const base = isZh ? "/zh" : "";
+  const intro = projectIntro(pageMd[isZh ? "home.zh" : "home"] || pageMd.home || "");
+  let md = isZh
+    ? `# 找不到頁面\n\n這個頁面不存在或已移除。\n\n## 關於 ${SITE_NAME}\n\n${intro}\n\n[前往首頁](${base}/) · [GitHub](https://github.com/${REPO})\n`
+    : `# Page not found\n\nThis page does not exist or has been removed.\n\n## About ${SITE_NAME}\n\n${intro}\n\n[Go to the documentation home](${base}/) · [GitHub](https://github.com/${REPO})\n`;
+  for (const group of NAV) {
+    const items = group.items.filter(i => (isZh ? zhSlugs : allSlugs).includes(i.slug) && pageMd[i.slug]);
+    if (!items.length) continue;
+    md += `\n## ${isZh ? (NAV_ZH_SECTION[group.section] || group.section) : group.section}\n\n`;
+    for (const i of items) md += `- [${isZh ? (NAV_ZH_LABEL[i.slug] || i.label) : i.label}](${i.slug === "home" ? `${base}/` : `${base}/${i.slug}`})\n`;
+  }
+  const html = addHeadingIds(renderMarkdown(md));
+  const title = isZh ? "找不到頁面" : "Page not found";
+  const page = renderPage("404", title, "", "", buildSidebar("", lang), html, buildTOC(html, lang), lang, null);
+  const out = path.join(isZh ? ZH_DIR : OUT_DIR, "404.html");
+  fs.writeFileSync(out, page);
+  console.log(`OK: ${out}`);
+}
+
+buildNotFound("en");
+if (zhSlugs.length) buildNotFound("zh");
+
+const pathOf = key => {
+  const [lang, slug] = key.split(":");
+  const base = lang === "zh" ? "/zh" : "";
+  return slug === "home" ? `${base}/` : `${base}/${slug}`;
+};
+const live = new Set([...allSlugs.filter(s => pageMd[s]).map(s => pathOf(`en:${s}`)), ...zhSlugs.map(s => pathOf(`zh:${s}`)), ...(releaseTags.length ? ["/released/", ...releaseTags.map(t => `/released/${t}`)] : [])]);
+for (const [from, to] of Object.entries(REDIRECTS)) {
+  if (live.has(from)) {
+    console.error(`[Conflict] redirects.json: ${from} is a live page; remove the entry`);
+    process.exit(1);
+  }
+  if (!live.has(to)) {
+    console.error(`[Not found] redirects.json: ${from} -> ${to}: target is not a built page`);
+    process.exit(1);
+  }
+}
+const vanished = Object.keys(DATES).map(pathOf).filter(p => !live.has(p) && !REDIRECTS[p] && !REMOVED.has(p));
+if (vanished.length) {
+  console.error(`[Conflict] published pages missing without a decision: ${vanished.join(", ")}; restore the page, or after the user confirms add a 301 to redirects.json (split/rename) or the path to removed.json (serve 404)`);
+  process.exit(1);
+}
+
 fs.writeFileSync(DATES_PATH, JSON.stringify(DATES, null, 2) + "\n");
+if (!HAS_SEO) {
+  console.log(`\nBuilt ${built} doc pages (${builtZh} zh), ${releaseTags.length} release pages without SEO output. Template ${TEMPLATE_VERSION}.`);
+  process.exit(0);
+}
+
+// === sitemap.xml ===
 const lastmodOf = key => DATES[key]?.modified || BUILD_DATE;
 let sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
 sitemap += `  <url><loc>${DOMAIN}/</loc><lastmod>${lastmodOf("en:home")}</lastmod></url>\n`;

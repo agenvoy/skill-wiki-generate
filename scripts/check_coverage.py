@@ -115,10 +115,28 @@ def analyzer_symbols(root: Path) -> list[dict]:
     symbols = []
     for f in data.get("functions", []):
         if f.get("exported"):
-            symbols.append({"package": str(Path(f["file"]).parent), "name": f["name"], "kind": "func", "signature": f.get("signature", "")})
+            symbols.append({"package": str(Path(f["file"]).parent), "name": f["name"], "kind": "func", "signature": f.get("signature", ""), "file": f["file"]})
     for t in data.get("types", []):
-        symbols.append({"package": str(Path(t["file"]).parent), "name": t["name"], "kind": t.get("kind", "type"), "signature": ""})
-    return symbols
+        symbols.append({"package": str(Path(t["file"]).parent), "name": t["name"], "kind": t.get("kind", "type"), "signature": "", "file": t["file"]})
+    if data.get("language") in {"javascript", "typescript"}:
+        symbols = script_entry_symbols(root, symbols, data.get("name") or ".")
+    return [{k: v for k, v in s.items() if k != "file"} for s in symbols]
+
+
+def script_entry_symbols(root: Path, symbols: list[dict], package: str) -> list[dict]:
+    entries = sorted({s["file"] for s in symbols if Path(s["file"]).stem == "index"}, key=lambda f: (len(Path(f).parts), f))
+    if not entries:
+        return symbols
+    entry = Path(entries[0])
+    content = (root / entry).read_text(encoding="utf-8")
+    names = {s["name"] for s in symbols if s["file"] == str(entry)}
+    files = set()
+    for group, source in re.findall(r"export\s*\{([^}]*)\}\s*from\s*[\"']([^\"']+)[\"']", content):
+        names |= {n.split(" as ")[-1].strip() for n in group.split(",") if n.strip()}
+    for source in re.findall(r"export\s*\*\s*from\s*[\"']([^\"']+)[\"']", content):
+        files.add(str((entry.parent / source).with_suffix(entry.suffix)))
+    public = [s for s in symbols if s["name"] in names or s["file"] in files]
+    return [{**s, "package": package} for s in public]
 
 
 def package_mentioned(rel: str, docs: str, module_path: str) -> bool:

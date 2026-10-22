@@ -9,7 +9,7 @@
     "deploy": "node build.js && node indexnow.js --ensure-key && wrangler deploy && node indexnow.js"
   },
   "dependencies": {
-    "@pardnchiu/nanomd": "2.0.1"
+    "@pardnchiu/nanomd": "2.0.10"
   },
   "devDependencies": {
     "wrangler": "^4.107.0"

@@ -2,10 +2,16 @@
 
 完整規範以 `SKILL.md` 與 `scripts/templates/` 為準（＝最新規範）；本檔只用於快速定位專案現有檔案與最新範本的差異，命中即直接修改專案。
 
-最新改動：2026-10-21
+最新改動：2026-10-23
 
 ## 破壞性變更
 
+- `worker.js` 不再把 404 一律 302 轉回 `/`：改讀 `redirects.json` 回 301，其餘不存在的網址回 `404.html`／`zh/404.html`（狀態碼 404，含專案介紹，noindex）；build 新增 404 頁，並在已上線頁面（`dates.json`）消失卻不在 `redirects.json`／`removed.json` 時以 `[Conflict]` 中止 → 先詢問使用者同意換掉舊 `worker.js`，再複製範本 `worker.js`，`redirects.json`（`{}`）、`removed.json`（`[]`）不存在才建立；build 回報消失的網址逐一詢問要 301 還是移除
+
+- SEO 值不再寫在 `build.js`：`PERSON_*`／`SAME_AS`／`ORG_*`／`TAGLINE`／`OG_IMAGE`／`FAVICON`／`HOME_TITLE*`／`PROGRAMMING_LANGUAGE`／`LICENSE_URL`／`AI_*`／`X_DEFAULT`／`BRAND_KEYWORDS` 常數與 `DESCRIPTIONS`／`DESCRIPTIONS_ZH`／`KEYWORDS`／`KEYWORDS_ZH` 物件移除，改讀 `wiki-worker/seo.json`（由 `/seo-optimize` 維護）→ 重新複製 `build.js` 前先跑 `node {skill_dir}/scripts/migrate_seo_json.js <舊 build.js> wiki-worker/seo.json` 保留現值；缺 `seo.json` 時 build 只輸出內容頁，不產生 meta、JSON-LD、sitemap、robots.txt、llms.txt
+
+- 範例 iframe 高度以 `documentElement.scrollHeight` 計算（不低於 iframe 本身高度，內容變短時不會縮回），iframe 內可捲動且 log 限高 160px → 改以 `body` 實際高度設定、`html,body` 與 log 一律 `overflow:hidden` 不限高；`demo.js` 整檔覆蓋即取得
+- `stampDates()` 只雜湊 Markdown 原文，改 title／description／keywords／JSON-LD 不更新 `dateModified`、sitemap `lastmod` → `renderPage` 的 `dates` 改收函式，雜湊納入 meta 與不含日期的 JSON-LD；重新複製 `build.js` 即取得，首次 build 全部文件頁 `modified` 會更新為當日
 - `sitemap.xml` 輸出 `<changefreq>`／`<priority>`（Google 忽略，seo-optimize 研究報告 2026-10-21 列為過時參數）→ 移除，只留 `<loc>` 與 `<lastmod>`；重新複製 `build.js` 即取得
 - `/released/` 索引頁 canonical 由 `{DOMAIN}/released`（無結尾斜線，伺服器 307 轉址，與 sitemap 的 `/released/` 不一致）改為 `{DOMAIN}/released/`；重新複製 `build.js` 即取得
 - 不存在的路徑改為 302 轉回 `/`：複製範本 `worker.js` 到 `wiki-worker/worker.js`，`wrangler.toml` 加 `main = "worker.js"` 與 `[assets]` 下的 `binding = "ASSETS"`；缺任一項時 404 仍回 Cloudflare 預設錯誤頁
