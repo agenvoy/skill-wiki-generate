@@ -3,13 +3,14 @@ const crypto = require("crypto");
 const path = require("path");
 const { Parse } = require("@pardnchiu/nanomd");
 
-const TEMPLATE_VERSION = "7.0.1"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
+const TEMPLATE_VERSION = "7.4.0"; // wiki-generate template version; see scripts/templates/CHANGELOG.md
 
 // === Site config — filled in by wiki-generate when this template is copied into a project ===
 const SITE_NAME = "{{SITE_NAME}}";
 const DOMAIN = "{{DOMAIN}}";
 const REPO = "{{REPO}}"; // owner/repo
 const AUTHOR_NAME = "{{AUTHOR_NAME}}";
+const AUTHOR_NAME_ZH = "{{AUTHOR_NAME_ZH}}" || AUTHOR_NAME;
 const AUTHOR_URL = "{{AUTHOR_URL}}";
 const AUTHOR_HANDLE = "{{AUTHOR_HANDLE}}";
 const GTAG_ID = "{{GTAG_ID}}"; // empty string disables analytics
@@ -39,6 +40,7 @@ const HAS_SEO = SEO !== null;
 const S = SEO || {};
 const PERSON_ID = S.person?.id || "";
 const PERSON_NAME = S.person?.name || AUTHOR_NAME;
+const PERSON_NAME_ZH = S.person?.name_zh || PERSON_NAME;
 const PERSON_ALT_NAMES = S.person?.alt_names || [];
 const SAME_AS = S.person?.same_as || [];
 const ORG_NAME = S.organization?.name || "";
@@ -311,9 +313,9 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   } else {
     fullTitle = isZh
       ? `${title}｜${SITE_NAME} 文件`
-      : `${title} - ${SITE_NAME} Docs`;
+      : `${title} | ${SITE_NAME} Docs`;
     if (titleTooLong(fullTitle)) {
-      fullTitle = isZh ? `${title}｜${SITE_NAME}` : `${title} - ${SITE_NAME}`;
+      fullTitle = isZh ? `${title}｜${SITE_NAME}` : `${title} | ${SITE_NAME}`;
     }
   }
 
@@ -332,11 +334,13 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     ` : ""}`;
 
   const inLanguage = isZh ? ZH_LANG : "en";
+  const personName = isZh ? PERSON_NAME_ZH : PERSON_NAME;
+  const personAltNames = [...new Set([isZh ? PERSON_NAME : PERSON_NAME_ZH, ...PERSON_ALT_NAMES])].filter((n) => n && n !== personName);
   const person = {
     "@type": "Person",
     "@id": PERSON_ID,
-    "name": PERSON_NAME,
-    ...(PERSON_ALT_NAMES.length ? { "alternateName": PERSON_ALT_NAMES } : {}),
+    "name": personName,
+    ...(personAltNames.length ? { "alternateName": personAltNames } : {}),
     "url": AUTHOR_URL,
     ...(SAME_AS.length ? { "sameAs": SAME_AS } : {}),
   };
@@ -402,7 +406,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
   const handleLink = `<a href="https://github.com/${AUTHOR_HANDLE}" target="_blank" rel="noopener">${AUTHOR_HANDLE}</a>`;
   const agentLinks = !HAS_SEO || slug === "404" ? "" : ` · <a href="/llms.txt">llms.txt</a> · <a href="${markdownHref(slug, isZh)}" type="text/markdown">${isZh ? "本頁 Markdown" : "Markdown"}</a>`;
   const byline = isZh
-    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a>（${handleLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`
+    ? `<footer class="byline">${SITE_NAME} 由<a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME_ZH}</a>（${handleLink}）開發${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`
     : `<footer class="byline">${SITE_NAME} is built by <a href="${AUTHOR_URL}" rel="author">${AUTHOR_NAME}</a> (${handleLink})${orgSegment}${taglineSegment}${BYLINE_LINKS}${agentLinks}</footer>`;
 
   const ogImage = OG_IMAGE
@@ -431,11 +435,11 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${titleHtml}</title>
     ${slug === "404" ? `<meta name="robots" content="noindex" />
-    ` : HAS_SEO ? `<meta name="robots" content="index, follow" />
+    ` : HAS_SEO ? `<meta name="robots" content="${slug.startsWith("released/") ? "noindex, follow" : "index, follow"}" />
     <meta name="title" content="${titleHtml}" />
     <meta name="description" content="${descriptionHtml}" />
     ${keywordsHtml ? `<meta name="keywords" content="${keywordsHtml}" />
-    ` : ""}<meta name="author" content="${AUTHOR_NAME}" />
+    ` : ""}<meta name="author" content="${isZh ? AUTHOR_NAME_ZH : AUTHOR_NAME}" />
     <link rel="author" href="${AUTHOR_URL}" />
     <link rel="canonical" href="${canonical}" />
     <link rel="alternate" type="text/markdown" href="${DOMAIN}${markdownHref(slug, isZh)}" />
@@ -457,7 +461,7 @@ function renderPage(slug, title, description, keywords, sidebar, content, toc, l
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/docs.css" />
     <style>${NANOMD_CSS}</style>
-    ${DEMO_SCRIPT ? `<script src="${DEMO_SCRIPT}"${Object.entries(DEMO_SCRIPT_ATTRS).map(([k, v]) => ` ${k}="${v}"`).join("")}${DEMO_LOG_IGNORE.length ? ` data-demo-ignore='${JSON.stringify(DEMO_LOG_IGNORE).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'` : ""}${DEMO_SCRIPT === NANOMD_SCRIPT ? ' data-nanomd-css="off"' : ""} data-demo defer></script>
+    ${DEMO_SCRIPT ? `<script src="${DEMO_SCRIPT}"${Object.entries(DEMO_SCRIPT_ATTRS).map(([k, v]) => ` ${k}="${v}"`).join("")}${DEMO_LOG_IGNORE.length ? ` data-demo-ignore='${JSON.stringify(DEMO_LOG_IGNORE).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'` : ""}${DEMO_SCRIPT === NANOMD_SCRIPT ? ' data-nanomd-css="off"' : ' type="text/plain"'} data-demo defer></script>
     ` : ""}${NANOMD_SCRIPT !== DEMO_SCRIPT ? `<script src="${NANOMD_SCRIPT}" data-nanomd-css="off" defer></script>
     ` : ""}  </head>
   <body>
@@ -722,11 +726,6 @@ if (zhSlugs.length) {
 }
 if (releaseTags.length) {
   sitemap += `  <url><loc>${DOMAIN}/released/</loc><lastmod>${TAG_DATES[releaseTags[0]] || BUILD_DATE}</lastmod></url>\n`;
-  for (let i = 0; i < releaseTags.length; i++) {
-    const tag = releaseTags[i];
-    const lastmod = TAG_DATES[tag] || BUILD_DATE;
-    sitemap += `  <url><loc>${DOMAIN}/released/${tag}</loc><lastmod>${lastmod}</lastmod></url>\n`;
-  }
 }
 sitemap += `</urlset>\n`;
 fs.writeFileSync(path.join(__dirname, "public/sitemap.xml"), sitemap);
@@ -739,7 +738,7 @@ const contentUsage = aiprefPairs.map(([k, v]) => `${k}=${v}`).join(", ");
 const contentSignal = signalPairs.map(([k, v]) => `${k}=${v === "y" ? "yes" : "no"}`).join(", ");
 const robots = `User-agent: *
 Allow: /
-${contentUsage ? `Content-Usage: ${contentUsage}\n` : ""}${contentSignal ? `Content-signal: ${contentSignal}\n` : ""}
+${contentUsage ? `Content-Usage: ${contentUsage}\n` : ""}${contentSignal ? `Content-signal: ${contentSignal}\n` : ""}${AI_TRAIN === "y" || AI_TRAIN === "n" ? `\nUser-Agent: __usage_ai-training\n${AI_TRAIN === "y" ? "Allow" : "Disallow"}: /\n` : ""}
 Sitemap: ${DOMAIN}/sitemap.xml
 `;
 fs.writeFileSync(path.join(__dirname, "public/robots.txt"), robots);

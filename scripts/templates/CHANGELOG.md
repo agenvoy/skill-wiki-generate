@@ -2,10 +2,18 @@
 
 完整規範以 `SKILL.md` 與 `scripts/templates/` 為準（＝最新規範）；本檔只用於快速定位專案現有檔案與最新範本的差異，命中即直接修改專案。
 
-最新改動：2026-10-23
+最新改動：2026-11-19
 
 ## 破壞性變更
 
+- 站台設定 `<project_root>/wiki-worker/.doc/seo/config.json` → 改存 `{skill_dir}/.doc/{專案絕對路徑 sha256 前 16 碼}/config.json`（`site_name`／`domain`／`gtag_id`＋`project_path`／`repo`），寫入後刪除舊檔；其餘舊欄位不搬（SKILL.md Step 0.3）
+- 作者名兩語言共用同一寫法（`AUTHOR_NAME` 如 `邱敬幃 Pardn Chiu`，中文頁 JSON-LD Person `name` 為英文）→ `AUTHOR_NAME` 改為 `author_name`（`Pardn Chiu (邱敬幃)`）、新增 `AUTHOR_NAME_ZH` = `author_name_zh`（`邱敬幃 (Pardn Chiu)`），`seo.json` 補 `person.name_zh`（`邱敬幃`）；署名列與 `meta author` 依頁面語言輸出，JSON-LD Person `name` 只寫該頁語言名稱（7.4.0，seo-optimize R10）
+- 專案根 `.gitattributes` 缺 `wiki-worker/** linguist-documentation` → 追加該行（檔案不存在就建立）
+- `SITE_NAME` 為 `{owner}/{repo}`（如 `pardnchiu/go-queue`）→ 改為專案名（`go-queue`），`.doc/seo/config.json` 的 `site_name` 同步；首頁 title 尾綴由 `/seo-optimize` 統一為 ` | {專案名}`／`｜{專案名}`（舊範本 6.x 改 `build.js` 的 `HOME_TITLE`／`HOME_TITLE_ZH`）
+- `AUTHOR_URL` 取 `~/.skill-readme-generate.json` 的 `author_url`（LinkedIn）→ 改為 `same_as` 中的作者個人網站（如 `https://pardn.io/`），沒有個人網站才用 `author_url`；專案 `build.js` 的 `AUTHOR_URL` 是平台個人頁而 `same_as` 有個人網站時直接改值
+- 根目錄 `.gitignore` 整個排除 `wiki-worker`，建置原始檔、`seo.json`、`dates.json` 不進版控 → 複製範本 `gitignore` 為 `wiki-worker/.gitignore`（只排除編譯產物），經使用者同意後刪除根目錄 `.gitignore` 的 `wiki-worker` 那行（7.2.0）
+- `worker.js` 直接回傳 Cloudflare assets 的 307（`/index.html`、結尾斜線、`.html` 變體）→ 改為 301 到同一個 `Location`；`wrangler.toml` 的 `[assets]` 加 `run_worker_first = true`（否則 assets 層直接回 307，worker 不會被呼叫），經使用者同意後複製範本 `worker.js`（7.1.1）
+- 單版本頁 `/released/<tag>` 原本是 `index, follow` 且全部列入 sitemap → 改為 `noindex, follow`、sitemap 只留 `/released/`；重新複製 `build.js` 即取得（7.1.0）
 - `worker.js` 不再把 404 一律 302 轉回 `/`：改讀 `redirects.json` 回 301，其餘不存在的網址回 `404.html`／`zh/404.html`（狀態碼 404，含專案介紹，noindex）；build 新增 404 頁，並在已上線頁面（`dates.json`）消失卻不在 `redirects.json`／`removed.json` 時以 `[Conflict]` 中止 → 先詢問使用者同意換掉舊 `worker.js`，再複製範本 `worker.js`，`redirects.json`（`{}`）、`removed.json`（`[]`）不存在才建立；build 回報消失的網址逐一詢問要 301 還是移除
 
 - SEO 值不再寫在 `build.js`：`PERSON_*`／`SAME_AS`／`ORG_*`／`TAGLINE`／`OG_IMAGE`／`FAVICON`／`HOME_TITLE*`／`PROGRAMMING_LANGUAGE`／`LICENSE_URL`／`AI_*`／`X_DEFAULT`／`BRAND_KEYWORDS` 常數與 `DESCRIPTIONS`／`DESCRIPTIONS_ZH`／`KEYWORDS`／`KEYWORDS_ZH` 物件移除，改讀 `wiki-worker/seo.json`（由 `/seo-optimize` 維護）→ 重新複製 `build.js` 前先跑 `node {skill_dir}/scripts/migrate_seo_json.js <舊 build.js> wiki-worker/seo.json` 保留現值；缺 `seo.json` 時 build 只輸出內容頁，不產生 meta、JSON-LD、sitemap、robots.txt、llms.txt

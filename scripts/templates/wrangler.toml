@@ -10,6 +10,7 @@ preview_urls = false
 [assets]
 directory = "./public"
 binding = "ASSETS"
+run_worker_first = true
 
 [observability]
 enabled = false
